@@ -7,7 +7,7 @@ from mbwind import rotations, RigidConnection, RigidBody
 from mbwind.elements.modal import ModalElementFromFE
 
 class Rotor(object):
-    def __init__(self, num_blades, root_length, blade_fe, num_blade_modes=None):
+    def __init__(self, num_blades, root_length, blade_fe):
         self.num_blades = num_blades
         self.root_length = root_length
         self.blade_fe = blade_fe
@@ -16,18 +16,17 @@ class Rotor(object):
         self.roots = []
         self.blades = []
         for ib in range(num_blades):
-            R = rotations(('x', ib*2*pi/3), ('y', -pi/2))
+            R = rotations(('y', -pi/2), ('x', ib*2*pi/3))
             root_offset = dot(R, [root_length, 0, 0])
             root = RigidConnection('root%d' % (ib+1), root_offset, R)
-            blade = ModalElementFromFE('blade%d' % (ib+1),
-                                       blade_fe, num_blade_modes)
+            blade = ModalElementFromFE('blade%d' % (ib+1), blade_fe)
             root.add_leaf(blade)
             self.roots.append(root)
             self.blades.append(blade)
 
     @property
     def mass(self):
-        return self.num_blades * self.blade_modes.mass
+        return self.num_blades * self.blade_fe.fe.mass
 
     def connect_to(self, parent):
         for root in self.roots:

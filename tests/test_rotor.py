@@ -1,40 +1,38 @@
 from nose.tools import *
-from mock import Mock
 from numpy import pi, array, zeros, ones_like, r_, arange, sin, cos, diag, eye
 from numpy.testing import (assert_array_almost_equal,
                            assert_array_almost_equal_nulp)
-from spec import Spec
 
 import mbwind
-from mbwind.modes import ModalRepresentation
-from rotor import *
+from beamfe import BeamFE
+from bem.rotor import *
 
 assert_aae = assert_array_almost_equal
 
 def _mock_rigid_uniform_modes(density):
     x = arange(0, 20.1)  # 0 to 20 m inclusive
-    blade = ModalRepresentation(x, density * ones_like(x))
-    return blade
+    fe = BeamFE(x, density, 0, 0, 0)
+    return fe
 
-class Rotor_model(Spec):
+class Rotor_Tests:
 
-    def it_can_be_created(self):
+    def test_it_can_be_created(self):
         blade = _mock_rigid_uniform_modes(0)
-        rotor = Rotor(3, 1.25, blade)
+        rotor = Rotor(3, 1.25, blade.modal_matrices(0))
         assert_equal(rotor.num_blades,  3)
         assert_equal(rotor.root_length, 1.25)
 
-    def it_has_the_right_rotor_mass(self):
+    def test_it_has_the_right_rotor_mass(self):
         blade = _mock_rigid_uniform_modes(5)
-        rotor = Rotor(3, 1.25, blade)
+        rotor = Rotor(3, 1.25, blade.modal_matrices(0))
         assert_equal(rotor.mass,  3 * 5 * 20)
 
-    def the_rotor_system_can_be_setup(self):
+    def test_the_rotor_system_can_be_setup(self):
         linear_density = 5
         root_length = 1.25
 
         blade = _mock_rigid_uniform_modes(linear_density)
-        rotor = Rotor(3, root_length, blade)
+        rotor = Rotor(3, root_length, blade.modal_matrices(0))
         system = mbwind.System()
         rotor.connect_to(system)
         system.setup()
@@ -58,7 +56,7 @@ class Rotor_model(Spec):
         root_length = 1.25
 
         blade = _mock_rigid_uniform_modes(linear_density)
-        rotor = Rotor(3, root_length, blade)
+        rotor = Rotor(3, root_length, blade.modal_matrices(0))
 
         system = mbwind.System()
         joint = mbwind.FreeJoint('joint')

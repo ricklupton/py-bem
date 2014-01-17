@@ -1,0 +1,133 @@
+from nose.tools import *
+from numpy import pi, array, r_
+from numpy.testing import (assert_array_almost_equal,
+                           assert_array_almost_equal_nulp)
+
+from bem.bem import *
+from mbwind.blade import Blade
+
+
+demo_a_blade = """0	1.14815	3.44444	5.74074	9.18519	16.0741	26.4074	35.5926	38.2333	38.75
+2.06667	2.06667	2.75556	3.44444	3.44444	2.75556	1.83704	1.14815	0.688889	0.028704
+0	0	9	13	11	7.800002	3.3	0.3	2.75	4
+21	21	21	21	21	21	15	13	13	13"""
+bdata = [array([float(x) for x in row.split()])
+         for row in demo_a_blade.split('\n')]
+
+
+class BEMModel_Test_aeroinfo:
+    def setup(self):
+
+        # De-duplicate repeated stations in Bladed output
+        def dedup(x):
+            return r_[x[::2], x[-1:]]
+
+        # Load reference results from Bladed
+        from pybladed.data import BladedRun
+        br = BladedRun('../demo_a/aeroinfo_no_tip_loss_root21pc')
+        self.bladed_r  = dedup(br.find('axiala').x())
+        self.bladed = lambda chan: dedup(br.find(chan).get())
+
+        # Load blade & aerofoil definitions
+        blade = Blade('../demo_a/aeroinfo_no_tip_loss_root21pc.$PJ')
+        db = AerofoilDatabase('../aerofoils.npz')
+        root_length = 1.25
+
+        # Create BEM model, interpolating to same output radii as Bladed
+        self.model = BEMModel(blade, root_length=root_length,
+                              num_blades=3, aerofoil_database=db,
+                              bem_radii=self.bladed_r)
+
+
+    def test_loading(self):
+        # Expected values from Bladed
+        radii, chord, twist, thickness = bdata
+        radii += self.model.root_length
+
+        assert_array_almost_equal(radii, [a.radius for a in self.model.annuli],
+                                  decimal=3)
+        assert_array_almost_equal(
+            chord, [a.blade_section.chord for a in self.model.annuli],
+            decimal=4
+        )
+        assert_array_almost_equal(twist, [a.blade_section.twist * 180/pi
+                                          for a in self.model.annuli],
+                                  decimal=2)
+
+        def thick_from_name(name):
+            if name[3] == '%': return float(name[:3])
+            elif name[2] == '%': return float(name[:2])
+            else: raise ValueError('no thickness in name')
+        assert_array_almost_equal(thickness,
+                                  [thick_from_name(a.blade_section.foil.name)
+                                   for a in self.model.annuli])
+
+    def test_solution_against_Bladed(self):
+        # Same windspeed and rotor speed as the Bladed run
+        windspeed  = 12            # m/s
+        rotorspeed = 22 * (pi/30)  # rad/s
+        factors = self.model.solve(windspeed, rotorspeed)
+        a, at = zip(*factors)
+
+        # Bladed results
+        ba  = self.bladed('axiala')
+        bat = self.bladed('tanga')
+
+        assert_array_almost_equal(a, ba, decimal=2)
+        assert_array_almost_equal(at, bat, decimal=2)
+
+    def test_forces_against_Bladed(self):
+        # Same windspeed and rotor speed as the Bladed run
+        windspeed  = 12            # m/s
+        rotorspeed = 22 * (pi/30)  # rad/s
+        forces = self.model.forces(windspeed, rotorspeed, rho=1.225)
+        fx, fy = map(array, zip(*forces))
+
+        # Bladed results
+        bfx = self.bladed('dfout')
+        bfy = self.bladed('dfin')
+
+        assert_array_almost_equal(fx  / abs(fx).max(),
+                                  bfx / abs(fx).max(), decimal=3)
+        assert_array_almost_equal(fy  / abs(fy).max(),
+                                  bfy / abs(fy).max(), decimal=2)
+
+
+class BEMModel_Test_pcoeffs:
+    def setup(self):
+
+        # Load reference results from Bladed
+        from pybladed.data import BladedRun
+        br = BladedRun('..//demo_a/pcoeffs_no_tip_loss_root21pc')
+        self.bladed_TSR  = br.find('pocoef').x()
+        self.bladed = lambda chan: br.find(chan).get()
+
+        # Load blade & aerofoil definitions
+        blade = Blade('..//demo_a/pcoeffs_no_tip_loss_root21pc.$PJ')
+        db = AerofoilDatabase('..//aerofoils.npz')
+        root_length = 1.25
+
+        # Create BEM model, interpolating to same output radii as Bladed
+        self.model = BEMModel(blade, root_length=root_length,
+                              num_blades=3, aerofoil_database=db)
+
+    def test_coefficients_against_Bladed(self):
+        # Same rotor speed and TSRs as the Bladed run
+        rotorspeed = 22 * (pi/30)  # rad/s
+
+        # Don't do every TSR -- just a selection
+        nth = 4
+        TSRs = self.bladed_TSR[::nth]
+        R = self.model.annuli[-1].radius
+        windspeeds = (R*rotorspeed/TSR for TSR in TSRs)
+        coeffs = [self.model.pcoeffs(ws, rotorspeed) for ws in windspeeds]
+        CT, CQ, CP = zip(*coeffs)
+
+        # Bladed results
+        bCT = self.bladed('thcoef')[::nth]
+        bCQ = self.bladed('tocoef')[::nth]
+        bCP = self.bladed('pocoef')[::nth]
+
+        assert_array_almost_equal(CT, bCT, decimal=2)
+        assert_array_almost_equal(CQ, bCQ, decimal=2)
+        assert_array_almost_equal(CP, bCP, decimal=2)
