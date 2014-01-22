@@ -3,11 +3,11 @@ Rotor model using mbwind
 """
 
 from numpy import pi, dot
-from mbwind import rotations, RigidConnection, RigidBody
+from mbwind import rotations, RigidConnection, RigidBody, Hinge
 from mbwind.elements.modal import ModalElementFromFE
 
 class Rotor(object):
-    def __init__(self, num_blades, root_length, blade_fe):
+    def __init__(self, num_blades, root_length, blade_fe, pitch=False):
         self.num_blades = num_blades
         self.root_length = root_length
         self.blade_fe = blade_fe
@@ -20,9 +20,16 @@ class Rotor(object):
             root_offset = dot(R, [root_length, 0, 0])
             root = RigidConnection('root%d' % (ib+1), root_offset, R)
             blade = ModalElementFromFE('blade%d' % (ib+1), blade_fe)
-            root.add_leaf(blade)
             self.roots.append(root)
             self.blades.append(blade)
+
+            if pitch:
+                # Add bearing about blade X axis
+                bearing = Hinge('pitch%d' % (ib+1), [1, 0, 0])
+                root.add_leaf(bearing)
+                bearing.add_leaf(blade)
+            else:
+                root.add_leaf(blade)
 
     @property
     def mass(self):
