@@ -24,12 +24,12 @@ class BEMModel_Test_aeroinfo:
 
         # Load reference results from Bladed
         from pybladed.data import BladedRun
-        br = BladedRun('../demo_a/aeroinfo_no_tip_loss_root21pc')
+        br = BladedRun('../demo_a_modified/aeroinfo')
         self.bladed_r  = dedup(br.find('axiala').x())
         self.bladed = lambda chan: dedup(br.find(chan).get())
 
         # Load blade & aerofoil definitions
-        blade = Blade('../demo_a/aeroinfo_no_tip_loss_root21pc.$PJ')
+        blade = Blade('../demo_a_modified/aeroinfo.$PJ')
         db = AerofoilDatabase('../aerofoils.npz')
         root_length = 1.25
 
@@ -80,7 +80,8 @@ class BEMModel_Test_aeroinfo:
         # Same windspeed and rotor speed as the Bladed run
         windspeed  = 12            # m/s
         rotorspeed = 22 * (pi/30)  # rad/s
-        forces = self.model.forces(windspeed, rotorspeed, rho=1.225)
+        forces = self.model.forces(windspeed, rotorspeed, 1.225,
+                                   self.model.solve(windspeed, rotorspeed))
         fx, fy = map(array, zip(*forces))
 
         # Bladed results
@@ -98,12 +99,12 @@ class BEMModel_Test_pcoeffs:
 
         # Load reference results from Bladed
         from pybladed.data import BladedRun
-        br = BladedRun('..//demo_a/pcoeffs_no_tip_loss_root21pc')
+        br = BladedRun('../demo_a_modified/pcoeffs')
         self.bladed_TSR  = br.find('pocoef').x()
         self.bladed = lambda chan: br.find(chan).get()
 
         # Load blade & aerofoil definitions
-        blade = Blade('..//demo_a/pcoeffs_no_tip_loss_root21pc.$PJ')
+        blade = Blade('../demo_a_modified/pcoeffs.$PJ')
         db = AerofoilDatabase('..//aerofoils.npz')
         root_length = 1.25
 

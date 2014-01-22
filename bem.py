@@ -258,7 +258,8 @@ class BEMModel(object):
 
     def pcoeffs(self, windspeed, rotorspeed):
         # We'll nondimensionalise again later so value of rho doesn't matter
-        forces = self.forces(windspeed, rotorspeed, rho=1)
+        factors = self.solve(windspeed, rotorspeed)
+        forces = self.forces(windspeed, rotorspeed, rho=1, factors=factors)
         fx, fy = zip(*forces)
 
         # Integrate forces and moments about shaft
