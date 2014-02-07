@@ -11,7 +11,7 @@ from bem.bem import (AerofoilDatabase, Aerofoil, BladeSection, BEMModel,
 
 class AerofoilDatabase_Tests:
     def setup(self):
-        self.db = AerofoilDatabase('../aerofoils.npz')
+        self.db = AerofoilDatabase('tests/data/aerofoils.npz')
 
     # CylinderData:
     def test_cylinder_data_read_correctly(self):

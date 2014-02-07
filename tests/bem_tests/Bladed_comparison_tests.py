@@ -24,13 +24,13 @@ class BEMModel_Test_aeroinfo:
 
         # Load reference results from Bladed
         from pybladed.data import BladedRun
-        br = BladedRun('../demo_a_modified/aeroinfo')
+        br = BladedRun('tests/data/Bladed_demo_a_modified/aeroinfo')
         self.bladed_r  = dedup(br.find('axiala').x())
         self.bladed = lambda chan: dedup(br.find(chan).get())
 
         # Load blade & aerofoil definitions
-        blade = Blade('../demo_a_modified/aeroinfo.$PJ')
-        db = AerofoilDatabase('../aerofoils.npz')
+        blade = Blade('tests/data/Bladed_demo_a_modified/aeroinfo.$PJ')
+        db = AerofoilDatabase('tests/data/aerofoils.npz')
         root_length = 1.25
 
         # Create BEM model, interpolating to same output radii as Bladed
@@ -99,13 +99,13 @@ class BEMModel_Test_pcoeffs:
 
         # Load reference results from Bladed
         from pybladed.data import BladedRun
-        br = BladedRun('../demo_a_modified/pcoeffs')
+        br = BladedRun('tests/data/Bladed_demo_a_modified/pcoeffs')
         self.bladed_TSR  = br.find('pocoef').x()
         self.bladed = lambda chan: br.find(chan).get()
 
         # Load blade & aerofoil definitions
-        blade = Blade('../demo_a_modified/pcoeffs.$PJ')
-        db = AerofoilDatabase('..//aerofoils.npz')
+        blade = Blade('tests/data/Bladed_demo_a_modified/pcoeffs.$PJ')
+        db = AerofoilDatabase('tests/data/aerofoils.npz')
         root_length = 1.25
 
         # Create BEM model, interpolating to same output radii as Bladed
