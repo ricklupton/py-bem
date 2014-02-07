@@ -24,7 +24,7 @@ class iterate_induction_factors_test:
     def test_there_is_no_induction_if_no_lift(self):
         foil = Aerofoil('test', lambda alpha: 0, lambda alpha: 0)
         section = BladeSection(chord=1, twist=0.43, foil=foil)
-        a, at = iterate_induction_factors(1, section, 0.21, (0, 0))
+        a, at = iterate_induction_factors(1, section, 0.21, 0, (0, 0))
         eq_(a, 0)
         eq_(at, 0)
 
@@ -53,7 +53,7 @@ class iterate_induction_factors_test:
         LSR = w * r / U
         solidity = Nb * c / (2*pi*r)
         section = BladeSection(c, twist=0, foil=foil)
-        a1, at1 = iterate_induction_factors(LSR, section, solidity, (a, 0))
+        a1, at1 = iterate_induction_factors(LSR, section, solidity, 0, (a, 0))
         assert_aae(a, a1)
         assert at1 > 0
         # XXX could check at better
@@ -74,7 +74,7 @@ class solve_induction_factors_test:
         LSR = w * r / U
         solidity = Nb * c / (2*pi*r)
         section = BladeSection(chord=c, twist=0, foil=foil)
-        a, at = solve_induction_factors(LSR, section, solidity)
+        a, at = solve_induction_factors(LSR, section, solidity, pitch=0)
         assert a  > 0 and a  < 0.4
         assert at > 0 and at < 0.2
 
@@ -94,5 +94,5 @@ class solve_induction_factors_test:
         solidity = Nb * c / (2*pi*r)
         section = BladeSection(chord=c, twist=0, foil=foil)
         with assert_raises(RuntimeError):
-            a, at = solve_induction_factors(LSR, section, solidity)
+            a, at = solve_induction_factors(LSR, section, solidity, 0)
 

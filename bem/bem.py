@@ -38,9 +38,9 @@ class BladeSection(object):
         self.twist = twist
         self.foil = foil
 
-    def force_coefficients(self, inflow_angle):
+    def force_coefficients(self, inflow_angle, pitch):
         # lift & drag coefficients
-        alpha = inflow_angle - self.twist
+        alpha = inflow_angle - self.twist - pitch
         cl = self.foil.CL(alpha)
         cd = self.foil.CD(alpha)
 
@@ -78,11 +78,11 @@ def inflow(LSR, factors, extra_velocity_factors=None):
     return W, phi
 
 
-def iterate_induction_factors(LSR, blade_section, solidity, factors,
-                              extra_velocity_factors=None):
+def iterate_induction_factors(LSR, blade_section, solidity, pitch,
+                              factors, extra_velocity_factors=None):
     a, at = factors
     W, phi = inflow(LSR, factors, extra_velocity_factors)
-    cx, cy = blade_section.force_coefficients(phi)
+    cx, cy = blade_section.force_coefficients(phi, pitch)
 
     # calculate new induction factors
     if solidity * cx == 0:
@@ -106,7 +106,7 @@ def iterate_induction_factors(LSR, blade_section, solidity, factors,
     return (new_a, new_at)
 
 
-def solve_induction_factors(LSR, blade_section, solidity,
+def solve_induction_factors(LSR, blade_section, solidity, pitch,
                             extra_velocity_factors=None,
                             tol=1e-4, max_iterations=300):
     """
@@ -118,7 +118,7 @@ def solve_induction_factors(LSR, blade_section, solidity,
     """
     a = at = 0
     for i in range(max_iterations):
-        a1, at1 = iterate_induction_factors(LSR, blade_section, solidity,
+        a1, at1 = iterate_induction_factors(LSR, blade_section, solidity, pitch,
                                             (a, at), extra_velocity_factors)
         if abs(a1 - a) < tol and abs(at1 - at) < tol:
             return a1, at1
@@ -137,23 +137,24 @@ class BEMAnnulus(object):
         return (self.num_blades * self.blade_section.chord /
                 (2 * pi * self.radius))
 
-    def solve(self, windspeed, rotorspeed, extra_velocity_factors=None):
+    def solve(self, windspeed, rotorspeed, pitch, extra_velocity_factors=None):
         a, at = solve_induction_factors(
             LSR(windspeed, rotorspeed, self.radius),
             self.blade_section,
             self.solidity,
+            pitch,
             extra_velocity_factors)
         return a, at
 
-    def forces(self, windspeed, rotorspeed, rho, factors,
-               extra_velocity_factors=None):
+    def forces(self, windspeed, rotorspeed, pitch, rho,
+               factors, extra_velocity_factors=None):
         """Calculate in- and out-of-plane forces per unit length"""
 
         # Calculate force coefficients
         Wnorm, phi = inflow(LSR(windspeed, rotorspeed, self.radius),
                             factors, extra_velocity_factors)
         W = windspeed * Wnorm
-        cx, cy = self.blade_section.force_coefficients(phi)
+        cx, cy = self.blade_section.force_coefficients(phi, pitch)
 
         # De-normalise to actual forces
         fx = 0.5 * rho * W**2 * self.blade_section.chord * cx
@@ -167,8 +168,8 @@ class UnsteadyBEMAnnulus(BEMAnnulus):
         super(UnsteadyBEMAnnulus, self).__init__(radius, chord, twist, foil, num_blades)
         self.edge_radii = edge_radii
 
-    def inflow_derivatives(self, windspeed, rotorspeed, factors,
-                           extra_velocity_factors=None):
+    def inflow_derivatives(self, windspeed, rotorspeed, pitch,
+                           factors, extra_velocity_factors=None):
         """Calculate the derivatives of the aerodynamic induced velocities for
         an annulus $$ C_T = 4 a (1-a) + \frac{16}{3 \pi U_0}
         \frac{R_2^3 - R_1^3}{R_2^2 - R_1^2} \dot{a} $$
@@ -177,7 +178,7 @@ class UnsteadyBEMAnnulus(BEMAnnulus):
         u, ut = factors[0] * windspeed, factors[1] * rotorspeed * self.radius
         Wnorm, phi = inflow(LSR(windspeed, rotorspeed, self.radius),
                             factors, extra_velocity_factors)
-        cx, cy = self.blade_section.force_coefficients(phi)
+        cx, cy = self.blade_section.force_coefficients(phi, pitch)
         Kx = 4 * sin(phi) ** 2 / (cx * self.solidity)
         Ky = 4 * sin(phi) * cos(phi) / (self.solidity * cy)
 
@@ -230,8 +231,9 @@ class BEMModel(object):
     def radii(self):
         return [annulus.radius for annulus in self.annuli]
 
-    def solve(self, windspeed, rotorspeed, extra_velocity_factors=None):
-        factors = [annulus.solve(windspeed, rotorspeed, extra_velocity_factors)
+    def solve(self, windspeed, rotorspeed, pitch, extra_velocity_factors=None):
+        factors = [annulus.solve(windspeed, rotorspeed,
+                                 pitch, extra_velocity_factors)
                    for annulus in self.annuli]
         return factors
 
@@ -241,11 +243,11 @@ class BEMModel(object):
                   for annulus, fac in zip(self.annuli, factors)]
         return array(derivs)
 
-    def forces(self, windspeed, rotorspeed, rho, factors,
-               extra_velocity_factors=None):
+    def forces(self, windspeed, rotorspeed, pitch, rho,
+               factors, extra_velocity_factors=None):
         if extra_velocity_factors is None:
             extra_velocity_factors = np.zeros_like(factors)
-        forces = [annulus.forces(windspeed, rotorspeed, rho, fac, extra)
+        forces = [annulus.forces(windspeed, rotorspeed, pitch, rho, fac, extra)
                   for annulus, fac, extra in zip(self.annuli, factors,
                                                  extra_velocity_factors)]
 
@@ -256,10 +258,11 @@ class BEMModel(object):
 
         return array(forces)
 
-    def pcoeffs(self, windspeed, rotorspeed):
+    def pcoeffs(self, windspeed, rotorspeed, pitch=0.0):
         # We'll nondimensionalise again later so value of rho doesn't matter
-        factors = self.solve(windspeed, rotorspeed)
-        forces = self.forces(windspeed, rotorspeed, rho=1, factors=factors)
+        factors = self.solve(windspeed, rotorspeed, pitch)
+        forces = self.forces(windspeed, rotorspeed, pitch,
+                             rho=1, factors=factors)
         fx, fy = zip(*forces)
 
         # Integrate forces and moments about shaft

@@ -66,7 +66,7 @@ class BEMModel_Test_aeroinfo:
         # Same windspeed and rotor speed as the Bladed run
         windspeed  = 12            # m/s
         rotorspeed = 22 * (pi/30)  # rad/s
-        factors = self.model.solve(windspeed, rotorspeed)
+        factors = self.model.solve(windspeed, rotorspeed, pitch=0)
         a, at = zip(*factors)
 
         # Bladed results
@@ -80,8 +80,8 @@ class BEMModel_Test_aeroinfo:
         # Same windspeed and rotor speed as the Bladed run
         windspeed  = 12            # m/s
         rotorspeed = 22 * (pi/30)  # rad/s
-        forces = self.model.forces(windspeed, rotorspeed, 1.225,
-                                   self.model.solve(windspeed, rotorspeed))
+        factors = self.model.solve(windspeed, rotorspeed, 0)
+        forces = self.model.forces(windspeed, rotorspeed, 0, 1.225, factors)
         fx, fy = map(array, zip(*forces))
 
         # Bladed results
