@@ -100,15 +100,15 @@ def iterate_induction_factors(LSR, blade_section, solidity, pitch,
 
     # Slow down iteration a bit to improve convergence.
     # XXX is there a justification for this?
-    new_a = (a + new_a) / 2
-    new_at = (at + new_at) / 2
+    new_a = (a + 3*new_a) / 4
+    new_at = (at + 3*new_at) / 4
 
     return (new_a, new_at)
 
 
 def solve_induction_factors(LSR, blade_section, solidity, pitch,
                             extra_velocity_factors=None,
-                            tol=1e-4, max_iterations=300):
+                            tol=1e-6, max_iterations=300):
     """
     Parameters:
      - LSR:      local speed ratio = omega r / U
@@ -237,9 +237,9 @@ class BEMModel(object):
                    for annulus in self.annuli]
         return factors
 
-    def inflow_derivatives(self, windspeed, rotorspeed, factors):
+    def inflow_derivatives(self, windspeed, rotorspeed, pitch, factors):
         """Calculate inflow derivatives on all annuli"""
-        derivs = [annulus.inflow_derivatives(windspeed, rotorspeed, fac)
+        derivs = [annulus.inflow_derivatives(windspeed, rotorspeed, pitch, fac)
                   for annulus, fac in zip(self.annuli, factors)]
         return array(derivs)
 

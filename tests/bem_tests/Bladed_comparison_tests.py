@@ -1,7 +1,8 @@
 from nose.tools import *
 from numpy import pi, array, r_
 from numpy.testing import (assert_array_almost_equal,
-                           assert_array_almost_equal_nulp)
+                           assert_array_almost_equal_nulp,
+                           assert_allclose)
 
 from bem.bem import *
 from mbwind.blade import Blade
@@ -92,6 +93,28 @@ class BEMModel_Test_aeroinfo:
                                   bfx / abs(fx).max(), decimal=3)
         assert_array_almost_equal(fy  / abs(fy).max(),
                                   bfy / abs(fy).max(), decimal=2)
+
+
+class UnsteadBEMModel_Tests:
+    def setup(self):
+        # Load blade & aerofoil definitions
+        blade = Blade('tests/data/Bladed_demo_a_modified/aeroinfo.$PJ')
+        db = AerofoilDatabase('tests/data/aerofoils.npz')
+        root_length = 1.25
+
+        # Create BEM model, interpolating to same output radii as Bladed
+        self.model = BEMModel(blade, root_length=root_length,
+                              num_blades=3, aerofoil_database=db,
+                              unsteady=True)
+
+    def test_solve_finds_equilibrium_solution(self):
+        windspeed  = 12             # m/s
+        rotorspeed = 22 * (pi/30)   # rad/s
+        pitch      = 2  * (pi/180)  # rad
+        factors = self.model.solve(windspeed, rotorspeed, pitch)
+        xdot = self.model.inflow_derivatives(windspeed, rotorspeed,
+                                             pitch, factors)
+        assert_allclose(xdot, 0, atol=1e-4)
 
 
 class BEMModel_Test_pcoeffs:
