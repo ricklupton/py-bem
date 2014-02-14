@@ -14,9 +14,9 @@ from bem.bem import *
 from beamfe import BeamFE, interleave
 
 
-def build_bem_model(blade, root_length):
+def build_bem_model(blade, root_length, aerofoil_database):
     # Create BEM model, interpolating to same output radii as Bladed
-    db = AerofoilDatabase('aerofoils.npz')
+    db = AerofoilDatabase(aerofoil_database)
     model = BEMModel(blade, root_length, num_blades=3,
                      aerofoil_database=db, unsteady=True)
     return model
@@ -33,7 +33,7 @@ def build_fe_model(blade, root_length, rotor_speed, num_modes, modal_damping):
                 axial_force=rotor_speed**2 * N)
     fe.set_boundary_conditions('C', 'F')
 
-    modal = fe.modal_matrices(4)
+    modal = fe.modal_matrices(num_modes)
     modal.damping[:] = modal_damping
     return modal
 
@@ -52,8 +52,8 @@ def build_structural_system(root_length, modal_fe, rotor_speed):
 
 
 class AeroelasticModel:
-    def __init__(self, blade_definition, root_length, num_modes,
-                 rotor_speed, modal_damping):
+    def __init__(self, blade_definition, aerofoil_database,
+                 root_length, num_modes, rotor_speed, modal_damping):
         self.blade = blade_definition
         self.root_length = root_length
         self.rotor_speed = rotor_speed
@@ -61,7 +61,8 @@ class AeroelasticModel:
 
         self.modal = build_fe_model(blade_definition, root_length, rotor_speed,
                                     num_modes, modal_damping)
-        self.bem = build_bem_model(blade_definition, root_length)
+        self.bem = build_bem_model(blade_definition, root_length,
+                                   aerofoil_database)
         self.rotor, self.system = build_structural_system(
             root_length, self.modal, rotor_speed)
         self.system.update_kinematics()
@@ -106,7 +107,7 @@ class AeroelasticModel:
         # Distributed forces (transformed into element coordinates)
         aero_forces = np.zeros_like(bvel)
         aero_forces[:, 0:2] = self.bem.forces(wind_speed, self.rotor_speed,
-                                              self.air_density, pitch, factors,
+                                              pitch, self.air_density, factors,
                                               bvel_factors)
         beam_forces = self.rotor.transform_aero_to_blade(aero_forces)
 
@@ -138,7 +139,7 @@ class AeroelasticModel:
 
         # Set blade loading with no velocities
         self.system.qd[:] = 0
-        self.do_aeroelasticity(wind_speed, q_aero)
+        self.do_aeroelasticity(wind_speed, pitch, q_aero)
 
         # Find equilibrium
         self.system.find_equilibrium()
@@ -153,10 +154,11 @@ class AeroelasticModel:
 
         def callback(system, t, q_aero):
             windspeed = wind_speed_func(t)
-            qd_aero = self.do_aeroelasticity(windspeed, q_aero, pitch)
+            qd_aero = self.do_aeroelasticity(windspeed, pitch, q_aero)
             return qd_aero
 
-        integrator = mbwind.Integrator(self.system, outputs=('pos', 'vel'))
+        integrator = mbwind.Integrator(self.system, outputs=('pos', 'vel'),
+                                       method='dopri5')
         integrator.add_output(mbwind.LoadOutput('node-0', local=False))
         integrator.add_output(mbwind.LoadOutput('node-1', local=True))
         integrator.add_output(self.rotor.blades[0].output_deflections())
