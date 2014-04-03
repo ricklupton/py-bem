@@ -5,12 +5,17 @@ Rick Lupton
 """
 
 import numpy as np
-from bem.rotor import Rotor
-from mbwind import System, Hinge
-from pybladed.data import BladedRun
+from scipy.misc import derivative
+
 import mbwind
+from mbwind import System, Hinge, LinearisedSystem
 from mbwind.blade import Blade
+
+from pybladed.data import BladedRun
+
+from bem.rotor import Rotor
 from bem.bem import *
+
 from beamfe import BeamFE, interleave
 
 
@@ -49,6 +54,13 @@ def build_structural_system(root_length, modal_fe, rotor_speed):
     for b in rotor.pitch_bearings:
         system.prescribe(b, acc=0, vel=0)
     return rotor, system
+
+
+def perturb_vector(x, i, delta):
+    """Perturb ith element of x by i"""
+    y = x.copy()
+    y[i] += delta
+    return y
 
 
 class AeroelasticModel:
@@ -99,33 +111,65 @@ class AeroelasticModel:
         q_aero[1::2] = factors[:, 1] * self.rotor_speed * self.bem.radii
         return q_aero
 
-    def _apply_aero_loading_to_blade(self, blade, wind_speed, pitch, factors):
-        # Blade velocities -- ignore axial velocity
-        bvel = self.rotor.transform_blade_to_aero(blade.elastic_velocities())
-        bvel_factors = bvel[:, 0:2] / wind_speed
+    def update_states(self, inputs, q_aero, q_struct):
+        # Update structural system states
+        self.system.set_state(q_struct)
 
-        # Distributed forces (transformed into element coordinates)
-        aero_forces = np.zeros_like(bvel)
-        aero_forces[:, 0:2] = self.bem.forces(wind_speed, self.rotor_speed,
-                                              pitch, self.air_density, factors,
-                                              bvel_factors)
-        beam_forces = self.rotor.transform_aero_to_blade(aero_forces)
+        # Update aerodynamic loading
+        loading = self.get_aerodynamic_loading(inputs, q_aero, q_struct)
+        for i, b in enumerate(self.rotor.blades):
+            b.loading = loading[i, :, :]
+        self.system.update_kinematics()
 
-        # Apply the forces to the structural system
-        blade.loading = beam_forces
+    def get_aerodynamic_loading(self, inputs, q_aero, q_struct):
+        wind_speed, rotor_speed, pitch = inputs
+        factors = self._aerostates2factors(q_aero, wind_speed)
 
-    def do_aeroelasticity(self, wind_speed, pitch, q_aero):
+        def loading_on_blade(b):
+            # Blade velocities -- ignore axial velocity
+            bvel = self.rotor.transform_blade_to_aero(b.elastic_velocities())
+            bvel_factors = bvel[:, 0:2] / wind_speed
+
+            # Distributed forces (transformed into element coordinates)
+            aero_forces = np.zeros_like(bvel)
+            aero_forces[:, 0:2] = self.bem.forces(wind_speed, rotor_speed,
+                                                  pitch, self.air_density,
+                                                  factors, bvel_factors)
+            beam_forces = self.rotor.transform_aero_to_blade(aero_forces)
+            return beam_forces
+
+        return np.array([loading_on_blade(b) for b in self.rotor.blades])
+
+    def get_aerodynamic_state_derivatives(self, inputs, q_aero):
         # Calculate aerodynamic state derivatives
+        wind_speed, rotor_speed, pitch = inputs
         factors = self._aerostates2factors(q_aero, wind_speed)
         qd_aero = self.bem.inflow_derivatives(
-            wind_speed, self.rotor_speed, pitch, factors)
+            wind_speed, rotor_speed, pitch, factors)
+        return qd_aero.flatten()
 
+    def get_structural_state_derivatives(self, inputs, q_struct):
+        # Calculate structural accelerations
+        self.system.set_state(q_struct)
+        self.system.solve_accelerations()
+        zd = self.system.qd.dofs[:]
+        zdd = self.system.qdd.dofs[:]
+        return np.concatenate([zd, zdd])
+
+    def get_state_derivatives(self, inputs, q_aero, q_struct):
+        self.update_states(inputs, q_aero, q_struct)
+        return np.concatenate([
+            self.get_aerodynamic_state_derivatives(inputs, q_aero),
+            self.get_structural_state_derivatives(inputs, q_struct),
+        ])
+
+    def do_aeroelasticity(self, wind_speed, pitch, q_aero, q_struct):
         # Apply aerodynamic loading to blades
-        for b in self.rotor.blades:
-            self._apply_aero_loading_to_blade(b, wind_speed, pitch, factors)
+        inputs = wind_speed, self.rotor_speed, pitch
+        self.update_states(inputs, q_aero, q_struct)
 
         # Return aerodynamic state derivatives
-        return qd_aero.flatten()
+        return self.get_aerodynamic_state_derivatives(inputs, q_aero)
 
     def find_equilibrium(self, wind_speed, pitch):
         # Calculate initial aerodynamic states
@@ -139,7 +183,8 @@ class AeroelasticModel:
 
         # Set blade loading with no velocities
         self.system.qd[:] = 0
-        self.do_aeroelasticity(wind_speed, pitch, q_aero)
+        q_struct = self.system.get_state()
+        self.do_aeroelasticity(wind_speed, pitch, q_aero, q_struct)
 
         # Find equilibrium
         self.system.find_equilibrium()
@@ -152,9 +197,9 @@ class AeroelasticModel:
                                                            pitch)
         self.system.q.dofs[:] = initial_dofs
 
-        def callback(system, t, q_aero):
+        def callback(system, t, q_struct, q_aero):
             windspeed = wind_speed_func(t)
-            qd_aero = self.do_aeroelasticity(windspeed, pitch, q_aero)
+            qd_aero = self.do_aeroelasticity(windspeed, pitch, q_aero, q_struct)
             return qd_aero
 
         integrator = mbwind.Integrator(self.system, outputs=('pos', 'vel'),
@@ -172,3 +217,95 @@ class AeroelasticModel:
                 print("[{:2}] {}".format(i, label))
 
         return integrator  # contains results
+
+    def linearise_bem(self, windspeed, pitch, perturbation=None):
+        """
+        Linearise BEM model about the operating point given by `windspeed`,
+        `rotorspeed` and `pitch`.
+        """
+        if perturbation is None:
+            perturbation = 1e-5  # could have a better default
+        assert perturbation > 0
+
+        # Find equilibrium operating point
+        blade = self.rotor.blades[0]  # XXX
+        u0 = array([windspeed, self.rotor_speed, pitch])
+        xs0, xa0 = self.find_equilibrium(windspeed, pitch)
+        xs0 = np.concatenate([xs0, 0*xs0])  # include velocities
+
+        # Define output vector
+        def get_outputs(u, xa, xs):
+            self.update_states(u, xa, xs)
+            self.system.solve_reactions()
+            return np.concatenate([
+                self.get_aerodynamic_loading(u, xa, xs).flatten(),
+                -self.system.joint_reactions['node-0']
+            ])
+        y0 = get_outputs(u0, xa0, xs0)
+
+        # Perturb
+        Nx = len(xa0) + len(xs0)  # number of states
+        Nu = len(u0)              # number of inputs
+
+        def perturb_A(delta, i):
+            if i < len(xa0):
+                xa = perturb_vector(xa0, i, delta)
+                xs = xs0
+            else:
+                xa = xa0
+                xs = perturb_vector(xs0, i - len(xa0), delta)
+            return self.get_state_derivatives(u0, xa, xs)
+
+        def perturb_B(delta, i):
+            u = perturb_vector(u0, i, delta)
+            return self.get_state_derivatives(u, xa0, xs0)
+
+        def perturb_C(delta, i):
+            if i < len(xa0):
+                xa = perturb_vector(xa0, i, delta)
+                xs = xs0
+            else:
+                xa = xa0
+                xs = perturb_vector(xs0, i - len(xa0), delta)
+            return get_outputs(u0, xa, xs)
+
+        def perturb_D(delta, i):
+            u = perturb_vector(u0, i, delta)
+            return get_outputs(u, xa0, xs0)
+
+        h = perturbation
+        A = array([derivative(perturb_A, 0, h, args=(i,)) for i in range(Nx)]).T
+        B = array([derivative(perturb_B, 0, h, args=(i,)) for i in range(Nu)]).T
+        C = array([derivative(perturb_C, 0, h, args=(i,)) for i in range(Nx)]).T
+        D = array([derivative(perturb_D, 0, h, args=(i,)) for i in range(Nu)]).T
+        return np.concatenate([xa0, xs0]), y0, (A, B, C, D)
+
+    def linearise_structure(self, wind_speed, pitch_angle, azimuth,
+                            mbc=False, perturbation=None):
+        """Linearise structural model about the operating point given by
+        `wind_speed`, `pitch_angle` and `azimuth`.
+        """
+        if perturbation is None:
+            perturbation = 1e-5  # could have a better default
+        assert perturbation > 0
+
+        # Find equilibrium operating point
+        blade = self.rotor.blades[0]  # XXX
+        xs0, xa0 = self.find_equilibrium(wind_speed, pitch_angle)
+
+        self.system.update_kinematics()
+        z0 = {'shaft': [azimuth]}
+        linsys = LinearisedSystem.from_system(self.system, z0,
+                                              perturbation=perturbation)
+
+        # Apply MBC transform if needed
+        if mbc:
+            iazimuth = self.system.free_dof_indices('shaft')[0]
+            iblades = [self.system.free_dof_indices('blade{}'.format(i+1))
+                       for i in range(3)]
+            if mbc == 2:
+                linsys = linsys.multiblade_transform2(iazimuth, iblades)
+            else:
+                linsys = linsys.multiblade_transform(iazimuth, iblades)
+
+        return xs0, linsys
