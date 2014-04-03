@@ -4,9 +4,9 @@ from numpy import pi, sin, cos, array
 import numpy as np
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem.bem import (AerofoilDatabase, Aerofoil, BladeSection, BEMModel,
+from bem.bem import (Aerofoil, BladeSection,
                      thrust_correction_factor, iterate_induction_factors,
-                     solve_induction_factors)
+                     solve_induction_factors, inflow)
 
 
 class thrust_correction_factor_test:
@@ -42,7 +42,7 @@ class iterate_induction_factors_test:
         c  = 1.9    # chord
 
         def lift_drag(alpha):
-            # Thrust should be 2 rho A U^2 a (1-a)
+            # Thrust should be 2 rho A U^2 a (1-a)`
             #   for annulus, A = 2 pi r  dr
             # If no drag, then
             #   thrust on blade = 0.5 rho c (U(1-a)/sin(phi))^2 CL dr cos(phi)
@@ -95,3 +95,30 @@ class solve_induction_factors_test:
         with assert_raises(RuntimeError):
             a, at = solve_induction_factors(LSR, section, solidity, 0)
 
+
+class inflow_test:
+    def test_simple_cases(self):
+        # Zero LSR -> not rotating.
+        assert_equal(inflow(0, (0, 0)), (1, pi/2))
+
+        # Zero LSR, axial induction -> no flow or double flow
+        assert_equal(inflow(0, (1, 0)), (0, 0))
+        assert_equal(inflow(0, (-1, 0)), (2, pi/2))
+
+        # LSR = 1 -> angle should be 45 deg with no induction
+        assert_equal(inflow(1, (0, 0)), (2**0.5, pi/4))
+
+        # LSR = 1, axial induction of 1 -> flow should be in-plane
+        assert_equal(inflow(1, (1, 0)), (1, 0))
+
+        # LSR = 1, axial induction of 1, tangential inflow of +/-1
+        #  -> flow should be in-plane, zero or double
+        assert_equal(inflow(1, (1, -1)), (0, 0))
+        assert_equal(inflow(1, (1, 1)), (2, 0))
+
+    def test_blade_velocities(self):
+        # Zero LSR, blade moving downwind at windspeed -> no flow
+        assert_equal(inflow(0, (0, 0), (1, 0)), (0, 0))
+
+        # Zero LSR, blade moving upwind at windspeed -> double flow
+        assert_equal(inflow(0, (0, 0), (-1, 0)), (2, pi/2))
