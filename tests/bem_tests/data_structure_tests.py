@@ -17,29 +17,26 @@ class AerofoilDatabase_Tests:
     def test_cylinder_data_read_correctly(self):
         foil = self.db.for_thickness(1.0)
         for alpha in [-0.3, 0, 0.3]:
-            assert_aae(foil.CL(alpha), 0)
-            assert_aae(foil.CD(alpha), 1)
+            assert_aae(foil.lift_drag(alpha), [0, 1])
 
     # ThirteenPercentFoil:
     def test_thirteen_percent_foil_read_correctly(self):
         foil = self.db.for_thickness(0.13)
-        assert_aae(foil.CL(0), 0.420)
-        assert_aae(foil.CD(0), 0.006)
-        assert_aae(foil.CL(10*pi/180), 1.460)
-        assert_aae(foil.CD(10*pi/180), 0.016)
+        assert_aae(foil.lift_drag(0), [0.420, 0.006])
+        assert_aae(foil.lift_drag(10*pi/180), [1.460, 0.016])
 
     def test_thirteen_percent_foil_interpolated_by_alpha(self):
         # Interpolate between 4 and 6 deg alpha
         foil = self.db.for_thickness(0.13)
-        assert_aae(foil.CL(5*pi/180), (0.890 + 1.100) / 2)
-        assert_aae(foil.CD(5*pi/180), (0.009 + 0.012) / 2)
+        assert_aae(foil.lift_drag(5*pi/180), [(0.890 + 1.100) / 2,
+                                              (0.009 + 0.012) / 2])
 
     # InterpolatedData:
     def interpolated_by_thickness(self):
         # Interpolate between 13% and 17% data
         foil = db.for_thickness(0.15)
-        assert_aae(foil.CL(10*pi/180), (1.460 + 1.500) / 2)
-        assert_aae(foil.CD(10*pi/180), (0.016 + 0.014) / 2)
+        assert_aae(foil.lift_drag(10*pi/180), [(1.460 + 1.500) / 2,
+                                               (0.016 + 0.014) / 2])
 
 
 class BladeSection_Tests:

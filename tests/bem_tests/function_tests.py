@@ -22,7 +22,7 @@ class thrust_correction_factor_test:
 
 class iterate_induction_factors_test:
     def test_there_is_no_induction_if_no_lift(self):
-        foil = Aerofoil('test', lambda alpha: 0, lambda alpha: 0)
+        foil = Aerofoil('test', lambda alpha: [0, 0])
         section = BladeSection(chord=1, twist=0.43, foil=foil)
         a, at = iterate_induction_factors(1, section, 0.21, 0, (0, 0))
         eq_(a, 0)
@@ -41,14 +41,15 @@ class iterate_induction_factors_test:
         Nb = 3      # number of blades
         c  = 1.9    # chord
 
-        def CL(alpha):
+        def lift_drag(alpha):
             # Thrust should be 2 rho A U^2 a (1-a)
             #   for annulus, A = 2 pi r  dr
             # If no drag, then
             #   thrust on blade = 0.5 rho c (U(1-a)/sin(phi))^2 CL dr cos(phi)
             # So CL = (8 pi r a sin^2 phi) / ((1-a) Nb c cos(phi))
-            return 8*pi*r * a * sin(alpha)**2 / ((1-a) * Nb * c * cos(alpha))
-        foil = Aerofoil('test', CL, CD=lambda alpha: 0)
+            CL = 8*pi*r * a * sin(alpha)**2 / ((1-a) * Nb * c * cos(alpha))
+            return [CL, 0]
+        foil = Aerofoil('test', lift_drag)
 
         LSR = w * r / U
         solidity = Nb * c / (2*pi*r)
@@ -67,9 +68,8 @@ class solve_induction_factors_test:
         Nb = 3      # number of blades
         c  = 1.9    # chord
 
-        foil = Aerofoil('test',
-                        CL=lambda alpha: 2*pi*alpha,
-                        CD=lambda alpha: 0.10*alpha)
+        lift_drag = lambda a: array([2*pi, 0.10]) * a
+        foil = Aerofoil('test', lift_drag)
 
         LSR = w * r / U
         solidity = Nb * c / (2*pi*r)
@@ -86,9 +86,8 @@ class solve_induction_factors_test:
         Nb = 3      # number of blades
         c  = 1.9    # chord
 
-        foil = Aerofoil('test',
-                        CL=lambda alpha: np.random.random()*2 - 1,
-                        CD=lambda alpha: 0.10*alpha)
+        lift_drag = lambda a: array([np.random.random()*2 - 1, 0.10]) * a
+        foil = Aerofoil('test', lift_drag)
 
         LSR = w * r / U
         solidity = Nb * c / (2*pi*r)

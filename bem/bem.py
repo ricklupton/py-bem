@@ -1,5 +1,5 @@
 import numpy as np
-from numpy import pi, sin, cos, arctan2, trapz, array
+from numpy import pi, sin, cos, arctan2, trapz, array, dot
 from mbwind import Element
 from scipy.interpolate import interp1d
 
@@ -9,27 +9,32 @@ class AerofoilDatabase(object):
         self.filename = filename
         self.aerofoils = np.load(filename)
 
-        # Set up interpolating functions for each thickness
+        # Reinterpolate data for all aerofoils to consistent values of alpha
         datasets = self.aerofoils['datasets']
-        self._CLs = [interp1d(data['alpha'], data['CL']) for data in datasets]
-        self._CDs = [interp1d(data['alpha'], data['CD']) for data in datasets]
+        alpha = []
+        for a in sorted(a for data in datasets for a in data['alpha']):
+            if alpha and abs(a - alpha[-1]) < 1e-5:
+                continue
+            alpha.append(a)
+        self.alpha = np.array(alpha)
+        lift_drag = np.dstack([
+            [np.interp(alpha, data['alpha'], data['CL']) for data in datasets],
+            [np.interp(alpha, data['alpha'], data['CD']) for data in datasets]
+        ])
+        self.lift_drag_by_thickness = interp1d(
+            self.aerofoils['thicknesses'], lift_drag, axis=0, copy=False)
 
     def for_thickness(self, thickness):
-        thicknesses = self.aerofoils['thicknesses']
-        def CL(alpha):
-            CL_thick = interp1d(thicknesses, [CL(alpha) for CL in self._CLs])
-            return CL_thick(thickness)
-        def CD(alpha):
-            CD_thick = interp1d(thicknesses, [CD(alpha) for CD in self._CDs])
-            return CD_thick(thickness)
-        return Aerofoil('%02d%% thickness' % (100 * thickness), CL, CD)
+        lift_drag = self.lift_drag_by_thickness(thickness)
+        lift_drag_by_alpha = interp1d(self.alpha, lift_drag, axis=0)
+        return Aerofoil('%02d%% thickness' % (100 * thickness),
+                        lift_drag_by_alpha)
 
 
 class Aerofoil(object):
-    def __init__(self, name, CL, CD):
+    def __init__(self, name, lift_drag_func):
         self.name = name
-        self.CL = CL
-        self.CD = CD
+        self.lift_drag = lift_drag_func
 
 
 class BladeSection(object):
@@ -41,14 +46,13 @@ class BladeSection(object):
     def force_coefficients(self, inflow_angle, pitch):
         # lift & drag coefficients
         alpha = inflow_angle - self.twist - pitch
-        cl = self.foil.CL(alpha)
-        cd = self.foil.CD(alpha)
+        cl_cd = self.foil.lift_drag(alpha)
 
         # resolve in- and out-of-plane
-        cx =  cl*cos(inflow_angle) + cd*sin(inflow_angle)
-        cy = -cl*sin(inflow_angle) + cd*cos(inflow_angle)
-
-        return cx, cy
+        cphi, sphi = cos(inflow_angle), sin(inflow_angle)
+        A = array([[cphi, sphi], [-sphi, cphi]])
+        cx_cy = dot(A, cl_cd)
+        return cx_cy
 
 
 def thrust_correction_factor(a):
