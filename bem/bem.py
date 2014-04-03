@@ -78,7 +78,10 @@ def inflow(LSR, factors, extra_velocity_factors=None):
     Ux = (1.0 - a) - xdot
     Uy = LSR * (1.0 + at) - ydot
     phi = arctan2(Ux, Uy)
-    W = Ux / sin(phi)
+    if abs(phi) < 1e-2:
+        W = Uy / cos(phi)
+    else:
+        W = Ux / sin(phi)
     return W, phi
 
 
@@ -112,7 +115,7 @@ def iterate_induction_factors(LSR, blade_section, solidity, pitch,
 
 def solve_induction_factors(LSR, blade_section, solidity, pitch,
                             extra_velocity_factors=None,
-                            tol=1e-6, max_iterations=300):
+                            tol=None, max_iterations=500, initial=None):
     """
     Parameters:
      - LSR:      local speed ratio = omega r / U
@@ -120,7 +123,12 @@ def solve_induction_factors(LSR, blade_section, solidity, pitch,
      - solidity: chord solidity = (B c / 2 pi r)
      - extra_velocity: blade structural velocities normalised by U
     """
-    a = at = 0
+    if tol is None:
+        tol = 1e-6
+    if initial is None:
+        a = at = 0
+    else:
+        a, at = initial
     for i in range(max_iterations):
         a1, at1 = iterate_induction_factors(LSR, blade_section, solidity, pitch,
                                             (a, at), extra_velocity_factors)
@@ -135,19 +143,24 @@ class BEMAnnulus(object):
         self.radius = radius
         self.blade_section = BladeSection(chord, twist, foil)
         self.num_blades = num_blades
+        self._last_factors = None
 
     @property
     def solidity(self):
         return (self.num_blades * self.blade_section.chord /
                 (2 * pi * self.radius))
 
-    def solve(self, windspeed, rotorspeed, pitch, extra_velocity_factors=None):
+    def solve(self, windspeed, rotorspeed, pitch, extra_velocity_factors=None,
+              tol=None):
         a, at = solve_induction_factors(
             LSR(windspeed, rotorspeed, self.radius),
             self.blade_section,
             self.solidity,
             pitch,
-            extra_velocity_factors)
+            extra_velocity_factors,
+            tol,
+            initial=self._last_factors)
+        self._last_factors = a, at
         return a, at
 
     def forces(self, windspeed, rotorspeed, pitch, rho,
@@ -190,9 +203,14 @@ class UnsteadyBEMAnnulus(BEMAnnulus):
         mu = (16.0 / (3*pi)) * (R2**3 - R1**3) / (R2**2 - R1**2)
 
         H = thrust_correction_factor(factors[0])
-        udot = 4 * (windspeed - u) * ((windspeed - u) / Kx - (u / H)) / mu
-        utdot = 4 * (windspeed - u) * (
-            -(rotorspeed * self.radius + ut) / Ky - ut) / mu
+        if abs(factors[0] - 1) < 1e-3:
+            udot = -factors[0] * (0.60*windspeed**2
+                                  + 0.61*u*windspeed + 0.79*u**2) / mu
+            utdot = 0
+        else:
+            udot = 4 * (windspeed - u) * ((windspeed - u) / Kx - (u / H)) / mu
+            utdot = 4 * (windspeed - u) * (
+                -(rotorspeed * self.radius + ut) / Ky - ut) / mu
         return udot, utdot
 
 
