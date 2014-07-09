@@ -37,11 +37,3 @@ class AerofoilDatabase_Tests:
         foil = db.for_thickness(0.15)
         assert_aae(foil.lift_drag(10*pi/180), [(1.460 + 1.500) / 2,
                                                (0.016 + 0.014) / 2])
-
-
-class BladeSection_Tests:
-    def test_holds_chord_twist_and_foil(self):
-        section = BladeSection(1, 2, 3)
-        eq_(section.chord, 1)
-        eq_(section.twist, 2)
-        eq_(section.foil, 3)
