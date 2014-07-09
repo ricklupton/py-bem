@@ -1,0 +1,5 @@
+blade: demo_a_modified.bladedef
+aerofoil: aerofoils.npz
+windspeed: 18.0
+rotorspeed: 22.0
+pitch: 0.0

@@ -1,0 +1,8 @@
+[user]
+benchmark = 54da0d4
+
+[run-bem]
+exe = run-bem.py
+vcs = git
+extract_program = cat
+

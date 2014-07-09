@@ -1,0 +1,3 @@
+# Regression test outputs
+test.out.*
+test.err.*
