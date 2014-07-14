@@ -4,11 +4,14 @@ Rick Lupton
 22 Jan 2014
 """
 
+import os.path
+import yaml
+
 import numpy as np
 from scipy.misc import derivative
 
 import mbwind
-from mbwind import System, Hinge, LinearisedSystem
+from mbwind import System, Hinge, LinearisedSystem, ReducedSystem
 from mbwind.blade import Blade
 
 from pybladed.data import BladedRun
@@ -21,9 +24,8 @@ from beamfe import BeamFE, interleave
 
 def build_bem_model(blade, root_length, aerofoil_database):
     # Create BEM model, interpolating to same output radii as Bladed
-    db = AerofoilDatabase(aerofoil_database)
     model = BEMModel(blade, root_length, num_blades=3,
-                     aerofoil_database=db, unsteady=True)
+                     aerofoil_database=aerofoil_database, unsteady=True)
     return model
 
 
@@ -43,14 +45,13 @@ def build_fe_model(blade, root_length, rotor_speed, num_modes, modal_damping):
     return modal
 
 
-def build_structural_system(root_length, modal_fe, rotor_speed):
+def build_structural_system(root_length, modal_fe):
     rotor = Rotor(3, root_length, modal_fe, pitch=True)
     system = System()
     shaft = Hinge('shaft', [1, 0, 0])
     rotor.connect_to(shaft)
     system.add_leaf(shaft)
     system.setup()
-    system.prescribe(shaft, acc=0.0, vel=rotor_speed)
     for b in rotor.pitch_bearings:
         system.prescribe(b, acc=0, vel=0)
     return rotor, system
@@ -65,19 +66,73 @@ def perturb_vector(x, i, delta):
 
 class AeroelasticModel:
     def __init__(self, blade_definition, aerofoil_database,
-                 root_length, num_modes, rotor_speed, modal_damping):
+                 root_length, num_modes, fe_rotor_speed, modal_damping):
+        """Build an aeroelastic model with FE, BEM and mbwind.
+
+        Parameters
+        ----------
+        blade_definition: Blade object
+            object containing details of the blade.
+        aerofoil_database: AerofoilDatabase instance
+        root_length: float
+            distance from the rotation axis to the start of the blade
+        num_modes: int
+            number of modes to use in the modal representation
+        fe_rotor_speed: float
+            rotor speed used for calculating centrifugal stiffening in the FE
+        modal_damping: float or array
+            modal damping value[s]
+        """
         self.blade = blade_definition
         self.root_length = root_length
-        self.rotor_speed = rotor_speed
         self.air_density = 1.225
 
-        self.modal = build_fe_model(blade_definition, root_length, rotor_speed,
-                                    num_modes, modal_damping)
+        self.modal = build_fe_model(blade_definition, root_length,
+                                    fe_rotor_speed, num_modes,
+                                    modal_damping)
         self.bem = build_bem_model(blade_definition, root_length,
                                    aerofoil_database)
-        self.rotor, self.system = build_structural_system(
-            root_length, self.modal, rotor_speed)
+        self.rotor, self.system = build_structural_system(root_length,
+                                                          self.modal)
         self.system.update_kinematics()
+
+    @classmethod
+    def from_yaml(cls, filename, fe_rotor_speed):
+        # Read the data
+        with open(filename) as f:
+            config = yaml.safe_load(f)
+
+        cs = config['structure']
+        ca = config['aerodynamics']
+        basepath = os.path.dirname(filename)
+
+        # Load blade definition and aerofoil database
+        blade_definition = Blade(
+            os.path.join(basepath, cs['blade']['definition']))
+        aerofoil_database = AerofoilDatabase(
+            os.path.join(basepath, ca['aerofoil database']))
+
+        model = cls(blade_definition, aerofoil_database,
+                   cs['rotor']['root length'],
+                   cs['blade']['num modes'],
+                   fe_rotor_speed,
+                   cs['blade']['modal damping'])
+        model._config = config
+        return model
+
+    @property
+    def rotor_inertia(self):
+        self.system.update_kinematics()
+        rsys = ReducedSystem(self.system)
+        return rsys.M[0, 0]
+
+    def prescribe_rotor_speed(self, rotor_speed):
+        shaft = self.system.elements['shaft']
+        self.system.prescribe(shaft, acc=0.0, vel=rotor_speed)
+
+    def prescribe_rigid_blades(self):
+        for b in self.rotor.blades:
+            self.system.prescribe(b, vel=0)
 
     def plot_system(self):
         from mbwind.visual import SystemView
