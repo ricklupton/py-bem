@@ -1,0 +1,28 @@
+from nose.tools import *
+from numpy import pi, array, r_
+from numpy.testing import (assert_array_almost_equal,
+                           assert_array_almost_equal_nulp,
+                           assert_allclose)
+
+from bem.bem import AerofoilDatabase, BEMModel
+from mbwind.blade import Blade
+from timeit import Timer
+
+
+# Load blade & aerofoil definitions
+blade = Blade('tests/data/Bladed_demo_a_modified/aeroinfo.$PJ')
+db = AerofoilDatabase('tests/data/aerofoils.npz')
+root_length = 1.25
+
+# Create BEM model, interpolating to same output radii as Bladed
+model = BEMModel(blade, root_length=root_length,
+                 num_blades=3, aerofoil_database=db)
+
+
+print("BEM solution:")
+%timeit model.solve(12.0, 22 * pi/30, 0)
+
+print()
+print("Just calculating forces:")
+factors = model.solve(12.0, 22 * pi/30, 0)
+%timeit model.forces(12.0, 22 * pi/30, 0, 1.225, factors)
