@@ -62,16 +62,20 @@ class iterate_induction_factors_test:
             #   thrust on blade = 0.5 rho c (U(1-a)/sin(phi))^2 CL dr cos(phi)
             # So CL = (8 pi r a sin^2 phi) / ((1-a) Nb c cos(phi))
             CL = 8*pi*r * a * sin(alpha)**2 / ((1-a) * Nb * c * cos(alpha))
-            return [CL, 0]
+            return [CL[0], 0]
 
         LSR = w * r / U
         solidity = Nb * c / (2*pi*r)
         factors = np.array([[a, 0]])
-        force_coeffs = np.array([lift_drag(inflow(LSR, factors)[1])])
+
+        Wnorm, phi = inflow(LSR, factors)
+        cphi, sphi = np.cos(phi[0]), np.sin(phi[0])
+        A = array([[cphi, sphi], [-sphi, cphi]])
+        force_coeffs = np.array([np.dot(A, lift_drag(phi))])
         factors = iterate_induction_factors(LSR, force_coeffs,
                                             solidity, 0, factors)
         assert_aae(a, factors[0, 0])
-        assert at1 > 0
+        assert np.all(factors[:, 1] > 0)
         # XXX could check at better
 
 # class solve_induction_factors_test:

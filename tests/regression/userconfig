@@ -1,8 +1,14 @@
 [user]
-benchmark = 54da0d4
+benchmark = 12343ce
 
 [run-bem]
 exe = run-bem.py
 vcs = git
 extract_program = cat
-
+tolerance = \
+  (None, 1e-5, 'fx', False), \
+  (None, 1e-5, 'fy', False), \
+  (1e-5, 1e-3, 'a', False), \
+  (1e-5, 1e-2, 'at', False), \
+  (1e-4, None, 'udot', False), \
+  (1e-4, None, 'utdot', False)
