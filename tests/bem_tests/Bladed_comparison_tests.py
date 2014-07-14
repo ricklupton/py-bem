@@ -37,7 +37,7 @@ class BEMModel_Test_aeroinfo:
         # Create BEM model, interpolating to same output radii as Bladed
         self.model = BEMModel(blade, root_length=root_length,
                               num_blades=3, aerofoil_database=db,
-                              bem_radii=self.bladed_r)
+                              radii=self.bladed_r)
 
 
     def test_loading(self):
@@ -45,23 +45,16 @@ class BEMModel_Test_aeroinfo:
         radii, chord, twist, thickness = bdata
         radii += self.model.root_length
 
-        assert_array_almost_equal(radii, [a.radius for a in self.model.annuli],
-                                  decimal=3)
-        assert_array_almost_equal(
-            chord, [a.blade_section.chord for a in self.model.annuli],
-            decimal=4
-        )
-        assert_array_almost_equal(twist, [a.blade_section.twist * 180/pi
-                                          for a in self.model.annuli],
+        assert_array_almost_equal(radii, self.model.radii, decimal=3)
+        assert_array_almost_equal(chord, self.model.chord, decimal=4)
+        assert_array_almost_equal(twist, self.model.twist * 180/pi,
                                   decimal=2)
 
         def thick_from_name(name):
             if name[3] == '%': return float(name[:3])
             elif name[2] == '%': return float(name[:2])
             else: raise ValueError('no thickness in name')
-        assert_array_almost_equal(thickness,
-                                  [thick_from_name(a.blade_section.foil.name)
-                                   for a in self.model.annuli])
+        assert_array_almost_equal(thickness, self.model.thick, decimal=3)
 
     def test_solution_against_Bladed(self):
         # Same windspeed and rotor speed as the Bladed run
@@ -142,7 +135,7 @@ class BEMModel_Test_pcoeffs:
         # Don't do every TSR -- just a selection
         nth = 4
         TSRs = self.bladed_TSR[::nth]
-        R = self.model.annuli[-1].radius
+        R = self.model.radii[-1]
         windspeeds = (R*rotorspeed/TSR for TSR in TSRs)
         coeffs = [self.model.pcoeffs(ws, rotorspeed) for ws in windspeeds]
         CT, CQ, CP = zip(*coeffs)
