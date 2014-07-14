@@ -153,17 +153,17 @@ class AeroelasticModel:
             ax[0, 0].set_ylim(-6, 6)
         return fig
 
-    def _aerostates2factors(self, states, wind_speed):
+    def _aerostates2factors(self, states, wind_speed, rotor_speed):
         ul = states[0::2]
         ut = states[1::2]
         al = ul / wind_speed
-        at = ut / self.rotor_speed / self.bem.radii
+        at = ut / rotor_speed / self.bem.radii
         return np.c_[al, at]
 
-    def _factors2aerostates(self, factors, wind_speed):
+    def _factors2aerostates(self, factors, wind_speed, rotor_speed):
         q_aero = np.zeros(2 * factors.shape[0])
         q_aero[0::2] = factors[:, 0] * wind_speed
-        q_aero[1::2] = factors[:, 1] * self.rotor_speed * self.bem.radii
+        q_aero[1::2] = factors[:, 1] * rotor_speed * self.bem.radii
         return q_aero
 
     def update_states(self, inputs, q_aero, q_struct):
@@ -178,7 +178,7 @@ class AeroelasticModel:
 
     def get_aerodynamic_loading(self, inputs, q_aero, q_struct):
         wind_speed, rotor_speed, pitch = inputs
-        factors = self._aerostates2factors(q_aero, wind_speed)
+        factors = self._aerostates2factors(q_aero, wind_speed, rotor_speed)
 
         def loading_on_blade(b):
             # Blade velocities -- ignore axial velocity
@@ -198,7 +198,7 @@ class AeroelasticModel:
     def get_aerodynamic_state_derivatives(self, inputs, q_aero):
         # Calculate aerodynamic state derivatives
         wind_speed, rotor_speed, pitch = inputs
-        factors = self._aerostates2factors(q_aero, wind_speed)
+        factors = self._aerostates2factors(q_aero, wind_speed, rotor_speed)
         qd_aero = self.bem.inflow_derivatives(
             wind_speed, rotor_speed, pitch, factors)
         return qd_aero.flatten()
@@ -218,19 +218,19 @@ class AeroelasticModel:
             self.get_structural_state_derivatives(inputs, q_struct),
         ])
 
-    def do_aeroelasticity(self, wind_speed, pitch, q_aero, q_struct):
+    def do_aeroelasticity(self, wind_speed, rotor_speed, pitch, q_aero, q_struct):
         # Apply aerodynamic loading to blades
-        inputs = wind_speed, self.rotor_speed, pitch
+        inputs = wind_speed, rotor_speed, pitch
         self.update_states(inputs, q_aero, q_struct)
 
         # Return aerodynamic state derivatives
         return self.get_aerodynamic_state_derivatives(inputs, q_aero)
 
-    def find_equilibrium(self, wind_speed, pitch):
+    def find_equilibrium(self, wind_speed, rotor_speed, pitch):
         # Calculate initial aerodynamic states
-        initial_factors = array(self.bem.solve(wind_speed,
-                                               self.rotor_speed, pitch))
-        q_aero = self._factors2aerostates(initial_factors, wind_speed)
+        initial_factors = array(self.bem.solve(wind_speed, rotor_speed, pitch))
+        q_aero = self._factors2aerostates(initial_factors, wind_speed,
+                                          rotor_speed)
 
         # Set structural pitch
         for bearing in self.rotor.pitch_bearings:
@@ -273,7 +273,7 @@ class AeroelasticModel:
 
         return integrator  # contains results
 
-    def linearise_bem(self, windspeed, pitch, perturbation=None):
+    def linearise_bem(self, windspeed, rotor_speed, pitch, perturbation=None):
         """
         Linearise BEM model about the operating point given by `windspeed`,
         `rotorspeed` and `pitch`.
@@ -284,7 +284,7 @@ class AeroelasticModel:
 
         # Find equilibrium operating point
         blade = self.rotor.blades[0]  # XXX
-        u0 = array([windspeed, self.rotor_speed, pitch])
+        u0 = array([windspeed, rotor_speed, pitch])
         xs0, xa0 = self.find_equilibrium(windspeed, pitch)
         xs0 = np.concatenate([xs0, 0*xs0])  # include velocities
 
