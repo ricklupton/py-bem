@@ -5,8 +5,7 @@ from numpy import pi, sin, cos, array
 import numpy as np
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem.bem import (Aerofoil, BladeSection,
-                     thrust_correction_factor, iterate_induction_factors,
+from bem.bem import (thrust_correction_factor, iterate_induction_factors,
                      inflow, strip_boundaries)
 
 
@@ -35,10 +34,9 @@ class thrust_correction_factor_test:
 
 class iterate_induction_factors_test:
     def test_there_is_no_induction_if_no_lift(self):
-        foil = Aerofoil('test', lambda alpha: [0, 0])
         force_coeffs = np.array([[0, 0]])
         factors = iterate_induction_factors(1, force_coeffs, 0.21, 0,
-                                          array([[0, 0]]))
+                                            array([[0, 0]]))
         eq_(factors[0, 0], 0)
         eq_(factors[0, 0], 0)
 
@@ -48,12 +46,12 @@ class iterate_induction_factors_test:
         # calculation is already converged.
 
         # Choose some values
-        U  = 5.4    # wind speed
-        w  = 1.2    # rotor speed
-        r  = 15.3   # radius
-        a  = 0.14   # induction factor
+        U = 5.4     # wind speed
+        w = 1.2     # rotor speed
+        r = 15.3    # radius
+        a = 0.14    # induction factor
         Nb = 3      # number of blades
-        c  = 1.9    # chord
+        c = 1.9     # chord
 
         def lift_drag(alpha):
             # Thrust should be 2 rho A U^2 a (1-a)`
@@ -115,29 +113,36 @@ class iterate_induction_factors_test:
 #             a, at = solve_induction_factors(LSR, section, solidity, 0)
 
 
+def assert_inflow(lsr, factors, extra, expected):
+    if extra is not None:
+        extra = np.atleast_2d(extra)
+    factors = np.atleast_2d(factors)
+    assert_equal(inflow(lsr, factors, extra), expected)
+
+
 class inflow_test:
     def test_simple_cases(self):
         # Zero LSR -> not rotating.
-        assert_equal(inflow(0, (0, 0)), (1, pi/2))
+        assert_inflow(0, (0, 0), None, (1, pi/2))
 
         # Zero LSR, axial induction -> no flow or double flow
-        assert_equal(inflow(0, (1, 0)), (0, 0))
-        assert_equal(inflow(0, (-1, 0)), (2, pi/2))
+        assert_inflow(0, (1, 0), None, (0, 0))
+        assert_inflow(0, (-1, 0), None, (2, pi/2))
 
         # LSR = 1 -> angle should be 45 deg with no induction
-        assert_equal(inflow(1, (0, 0)), (2**0.5, pi/4))
+        assert_inflow(1, (0, 0), None, (2**0.5, pi/4))
 
         # LSR = 1, axial induction of 1 -> flow should be in-plane
-        assert_equal(inflow(1, (1, 0)), (1, 0))
+        assert_inflow(1, (1, 0), None, (1, 0))
 
         # LSR = 1, axial induction of 1, tangential inflow of +/-1
         #  -> flow should be in-plane, zero or double
-        assert_equal(inflow(1, (1, -1)), (0, 0))
-        assert_equal(inflow(1, (1, 1)), (2, 0))
+        assert_inflow(1, (1, -1), None, (0, 0))
+        assert_inflow(1, (1, 1), None, (2, 0))
 
     def test_blade_velocities(self):
         # Zero LSR, blade moving downwind at windspeed -> no flow
-        assert_equal(inflow(0, (0, 0), (1, 0)), (0, 0))
+        assert_inflow(0, (0, 0), (1, 0), (0, 0))
 
         # Zero LSR, blade moving upwind at windspeed -> double flow
-        assert_equal(inflow(0, (0, 0), (-1, 0)), (2, pi/2))
+        assert_inflow(0, (0, 0), (-1, 0), (2, pi/2))

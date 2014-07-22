@@ -1,11 +1,9 @@
 from nose.tools import *
 
-from numpy import pi, sin, cos, array
-import numpy as np
+from numpy import pi, array
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem.bem import (AerofoilDatabase, Aerofoil, BladeSection, BEMModel,
-                     thrust_correction_factor, iterate_induction_factors)
+from bem.bem import BEMModel
 
 
 class BEMModel_Tests:
@@ -17,10 +15,12 @@ class BEMModel_Tests:
             chord = array([1, 1, 1, 1])
             twist = array([1, 1, 1, 1])
             thickness = array([1, 1, 1, 1])
+
         class MockDatabase:
             def for_thickness(self, thickness):
                 return array([[0, 0], [0, 0]])
-            alpha = [-pi, pi]
+            alpha = array([-pi, pi])
+
         self.model = BEMModel(MockBlade(), self.root_length,
                               3, MockDatabase(), unsteady=True)
 

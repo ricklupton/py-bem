@@ -1,12 +1,10 @@
 from nose.tools import *
 
-from numpy import pi, sin, cos, array
-import numpy as np
+from numpy import pi
 from scipy.interpolate import interp1d
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem.bem import (AerofoilDatabase, Aerofoil, BladeSection, BEMModel,
-                     thrust_correction_factor, iterate_induction_factors)
+from bem.bem import AerofoilDatabase
 
 
 class AerofoilDatabase_Tests:
