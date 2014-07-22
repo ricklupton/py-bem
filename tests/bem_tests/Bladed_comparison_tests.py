@@ -87,19 +87,6 @@ class BEMModel_Test_aeroinfo:
         assert_array_almost_equal(fy  / abs(fy).max(),
                                   bfy / abs(fy).max(), decimal=2)
 
-
-class UnsteadBEMModel_Tests:
-    def setup(self):
-        # Load blade & aerofoil definitions
-        blade = Blade('tests/data/Bladed_demo_a_modified/aeroinfo.$PJ')
-        db = AerofoilDatabase('tests/data/aerofoils.npz')
-        root_length = 1.25
-
-        # Create BEM model, interpolating to same output radii as Bladed
-        self.model = BEMModel(blade, root_length=root_length,
-                              num_blades=3, aerofoil_database=db,
-                              unsteady=True)
-
     def test_solve_finds_equilibrium_solution(self):
         windspeed  = 12             # m/s
         rotorspeed = 22 * (pi/30)   # rad/s

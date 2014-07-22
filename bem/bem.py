@@ -98,8 +98,8 @@ def iterate_induction_factors(LSR, force_coeffs, solidity, pitch,
 
 
 class BEMModel(object):
-    def __init__(self, blade, root_length, num_blades, aerofoil_database,
-                 radii=None, unsteady=False):
+    def __init__(self, blade, root_length, num_blades,
+                 aerofoil_database, radii=None):
 
         if radii is None:
             radii = root_length + blade.radii
@@ -107,7 +107,6 @@ class BEMModel(object):
         self.blade = blade
         self.root_length = root_length
         self.num_blades = num_blades
-        self.unsteady = unsteady
 
         self.radii = radii
         self.boundaries = strip_boundaries(radii)
@@ -189,15 +188,12 @@ class BEMModel(object):
         return factors
 
     def inflow_derivatives(self, windspeed, rotorspeed, pitch,
-                           factors, extra_velocity_factors=None, annuli=None):
+                           factors, extra_velocity_factors=None):
         """Calculate the derivatives of the aerodynamic induced velocities for
         an annuli $$ C_T = 4 a (1-a) + \frac{16}{3 \pi U_0}
         \frac{R_2^3 - R_1^3}{R_2^2 - R_1^2} \dot{a} $$
 
         """
-
-        if annuli is None:
-            annuli = Ellipsis
 
         u = factors[:, 0] * windspeed
         ut = factors[:, 1] * rotorspeed * self.radii

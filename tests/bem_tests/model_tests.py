@@ -22,7 +22,7 @@ class BEMModel_Tests:
             alpha = array([-pi, pi])
 
         self.model = BEMModel(MockBlade(), self.root_length,
-                              3, MockDatabase(), unsteady=True)
+                              3, MockDatabase())
 
     def test_annuli_edges_are_correct(self):
         eq_(list(self.model.boundaries), [10, 11, 13, 15, 16])

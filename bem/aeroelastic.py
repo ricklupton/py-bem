@@ -25,7 +25,7 @@ from beamfe import BeamFE, interleave
 def build_bem_model(blade, root_length, aerofoil_database):
     # Create BEM model, interpolating to same output radii as Bladed
     model = BEMModel(blade, root_length, num_blades=3,
-                     aerofoil_database=aerofoil_database, unsteady=True)
+                     aerofoil_database=aerofoil_database)
     return model
 
 
