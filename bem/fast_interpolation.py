@@ -18,7 +18,19 @@ class fast_interpolation:
     def __init__(self, x, y, axis=-1):
         assert len(x) == y.shape[axis]
         self.x = x
-        self._f = interp1d(x, y, axis=axis, kind='slinear')
+        self.y = y
+        self.axis = axis
+        self._f = interp1d(x, y, axis=axis, kind='slinear', copy=False)
+
+    def __getstate__(self):
+        return dict(x=self.x, y=self.y, axis=self.axis)
+
+    def __setstate__(self, state):
+        self.x = state['x']
+        self.y = state['y']
+        self.axis = state['axis']
+        self._f = interp1d(self.x, self.y, axis=self.axis,
+                           kind='slinear', copy=False)
 
     def __call__(self, new_x):
         #assert new_x.shape == y.shape
