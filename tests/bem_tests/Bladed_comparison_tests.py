@@ -96,6 +96,16 @@ class BEMModel_Test_aeroinfo:
                                              pitch, factors)
         assert_allclose(xdot, 0, atol=1e-4)
 
+    def test_inflow_derivatives_with_one_annulus(self):
+        args = (12.2, 12*pi/30, 0)
+        factors = self.model.solve(*args)
+
+        all_derivs = self.model.inflow_derivatives(*args, factors=factors*1.1)
+
+        one_derivs = self.model.inflow_derivatives(
+            *args, factors=factors[7:8]*1.1, annuli=slice(7, 8))
+
+        assert_array_almost_equal(one_derivs, all_derivs[7:8, :])
 
 class BEMModel_Test_pcoeffs:
     def setup(self):

@@ -132,10 +132,17 @@ class BEMModel(object):
         #                           lift_drag_data, axis=1)
         self._last_factors = np.zeros((len(radii), 2))
 
-    def lift_drag(self, alpha):
+    def lift_drag(self, alpha, annuli=None):
         # return np.array([f(a) for a, f in zip(alpha, self._lift_drag_interp)])
-        alpha = np.vstack((alpha, alpha)).T
-        return self._lift_drag_interp(alpha)
+        if annuli is None or annuli == slice(None):
+            alpha = np.vstack((alpha, alpha)).T
+            return self._lift_drag_interp(alpha)
+        else:
+            return [
+                interp1d(self.alpha, self.lift_drag_data[annuli][i],
+                         axis=-2, copy=False)(alpha[i])
+                for i in range(len(alpha))
+            ]
 
     def solve(self, windspeed, rotorspeed, pitch,
               extra_velocity_factors=None, tol=None,
@@ -159,10 +166,13 @@ class BEMModel(object):
             factors = new_factors
         raise RuntimeError("maximum iterations reached")
 
-    def force_coefficients(self, inflow_angle, pitch):
+    def force_coefficients(self, inflow_angle, pitch, annuli=None):
+        if annuli is None:
+            annuli = slice(None)
+
         # lift & drag coefficients
-        alpha = wrap_angle(inflow_angle - self.twist - pitch)
-        cl_cd = self.lift_drag(alpha)
+        alpha = wrap_angle(inflow_angle - self.twist[annuli] - pitch)
+        cl_cd = self.lift_drag(alpha, annuli)
 
         # resolve in- and out-of-plane
         cphi, sphi = np.cos(inflow_angle), np.sin(inflow_angle)
@@ -188,23 +198,29 @@ class BEMModel(object):
         return factors
 
     def inflow_derivatives(self, windspeed, rotorspeed, pitch,
-                           factors, extra_velocity_factors=None):
+                           factors, extra_velocity_factors=None, annuli=None):
         """Calculate the derivatives of the aerodynamic induced velocities for
         an annuli $$ C_T = 4 a (1-a) + \frac{16}{3 \pi U_0}
         \frac{R_2^3 - R_1^3}{R_2^2 - R_1^2} \dot{a} $$
 
         """
 
-        u = factors[:, 0] * windspeed
-        ut = factors[:, 1] * rotorspeed * self.radii
-        Wnorm, phi = inflow(LSR(windspeed, rotorspeed, self.radii),
-                            factors, extra_velocity_factors)
-        force_coeffs = self.force_coefficients(phi, pitch)
-        cx, cy = force_coeffs[:, 0], force_coeffs[:, 1]
-        Kx = 4 * sin(phi) ** 2 / (cx * self.solidity)
-        Ky = 4 * sin(phi) * cos(phi) / (self.solidity * cy)
+        if annuli is None:
+            annuli = slice(None)
 
-        R1, R2 = self.boundaries[:-1], self.boundaries[1:]
+        r = self.radii[annuli]
+        u = factors[:, 0] * windspeed
+        ut = factors[:, 1] * rotorspeed * r
+        assert r.shape == u.shape == ut.shape
+
+        Wnorm, phi = inflow(LSR(windspeed, rotorspeed, r),
+                            factors, extra_velocity_factors)
+        force_coeffs = self.force_coefficients(phi, pitch, annuli)
+        cx, cy = force_coeffs[:, 0], force_coeffs[:, 1]
+        Kx = 4 * sin(phi) ** 2 / (cx * self.solidity[annuli])
+        Ky = 4 * sin(phi) * cos(phi) / (self.solidity[annuli] * cy)
+
+        R1, R2 = self.boundaries[:-1][annuli], self.boundaries[1:][annuli]
         mu = (16.0 / (3*pi)) * (R2**3 - R1**3) / (R2**2 - R1**2)
 
         H = thrust_correction_factor(factors[:, 0])
@@ -220,7 +236,7 @@ class BEMModel(object):
         udot[~ii] = (4 * (windspeed - u[~ii]) *
                      ((windspeed - u[~ii]) / Kx[~ii] - (u / H)[~ii]) / mu[~ii])
         utdot[~ii] = (4 * (windspeed - u[~ii]) * (
-            -(rotorspeed * self.radii[~ii] + ut[~ii]) / Ky[~ii]
+            -(rotorspeed * r[~ii] + ut[~ii]) / Ky[~ii]
             - ut[~ii]) / mu[~ii])
         return np.c_[udot, utdot]
 
