@@ -1,14 +1,13 @@
-from nose.tools import *
-
+import unittest
 from numpy import pi
 from scipy.interpolate import interp1d
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem.bem import AerofoilDatabase
+from bem import AerofoilDatabase
 
 
-class AerofoilDatabase_Tests:
-    def setup(self):
+class AerofoilDatabaseTestCase(unittest.TestCase):
+    def setUp(self):
         self.db = AerofoilDatabase('tests/data/aerofoils.npz')
 
     # CylinderData:

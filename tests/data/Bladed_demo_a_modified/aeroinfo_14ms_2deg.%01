@@ -1,0 +1,17 @@
+FILE     aeroinfo_14ms_2deg.$01
+ACCESS    D
+FORM      U
+RECL               4
+FORMAT    R*4
+CONTENT  AEROINF             
+CONFIG   LIST                
+NDIMENS  2
+DIMENS            17         18
+GENLAB   'Aerodynamic information'
+VARIAB   ELRAD AXIALA TANGA TLOSS PHI ALPHA REYN CL CD CM WINDSP DFOUT DFIN DPMOM VP VT INFX
+VARUNIT  L N N N A A N N N N L/T F/L F/L FL/L L/T L/T N
+AXISLAB  'Distance along blade'
+AXIUNIT  L
+AXIMETH  3
+AXIVAL      1.250    2.398    2.398    4.694    4.694    6.991    6.991   10.435   10.435   17.324   17.324   27.657   27.657   36.843   36.843   39.483   39.483   40.000
+NVARS    0

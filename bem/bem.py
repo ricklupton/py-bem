@@ -3,6 +3,7 @@ from numpy import pi, sin, cos, arctan2, trapz, array, newaxis
 from scipy.interpolate import interp1d
 from .fast_interpolation import fast_interpolation
 
+
 def strip_boundaries(radii):
     # Find two ends of strip -- halfway between this point and
     # neighbours, apart from at ends when it's half as wide.
@@ -121,19 +122,11 @@ class BEMModel(object):
         self.lift_drag_data = np.array([
             aerofoil_database.for_thickness(th / 100)
             for th in self.thick])
-        self._lift_drag_interp = fast_interpolation(aerofoil_database.alpha,
-                                                    self.lift_drag_data,
-                                                    axis=1)
-            # interp1d(aerofoil_database.alpha,
-            #          aerofoil_database.for_thickness(th / 100),
-            #          axis=0, kind='linear')
-            # for th in self.thick]
-        # self.lift_drag = interp1d(aerofoil_database.alpha,
-        #                           lift_drag_data, axis=1)
+        self._lift_drag_interp = fast_interpolation(
+            aerofoil_database.alpha, self.lift_drag_data, axis=1)
         self._last_factors = np.zeros((len(radii), 2))
 
     def lift_drag(self, alpha, annuli=None):
-        # return np.array([f(a) for a, f in zip(alpha, self._lift_drag_interp)])
         if annuli is None or annuli == slice(None):
             alpha = np.vstack((alpha, alpha)).T
             return self._lift_drag_interp(alpha)

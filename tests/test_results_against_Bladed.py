@@ -1,32 +1,34 @@
-from nose.tools import *
+import unittest
 from numpy import pi, array, r_
 from numpy.testing import (assert_array_almost_equal,
-                           assert_array_almost_equal_nulp,
                            assert_allclose)
 
-from bem.bem import *
+from bem import (BEMModel, AerofoilDatabase)
 from mbwind.blade import Blade
+from pybladed.data import BladedRun
 
 
 demo_a_blade = """0	1.14815	3.44444	5.74074	9.18519	16.0741	26.4074	35.5926	38.2333	38.75
 2.06667	2.06667	2.75556	3.44444	3.44444	2.75556	1.83704	1.14815	0.688889	0.028704
 0	0	9	13	11	7.800002	3.3	0.3	2.75	4
 21	21	21	21	21	21	15	13	13	13"""
-bdata = [array([float(x) for x in row.split()])
-         for row in demo_a_blade.split('\n')]
 
 
-class BEMModel_Test_aeroinfo:
-    def setup(self):
+def get_bdata():
+    return [array([float(x) for x in row.split()])
+            for row in demo_a_blade.split('\n')]
 
-        # De-duplicate repeated stations in Bladed output
-        def dedup(x):
-            return r_[x[::2], x[-1:]]
 
+# De-duplicate repeated stations in Bladed output
+def dedup(x):
+    return r_[x[::2], x[-1:]]
+
+
+class BEMModel_aeroinfo_base:
+    def setUp(self):
         # Load reference results from Bladed
-        from pybladed.data import BladedRun
-        br = BladedRun('tests/data/Bladed_demo_a_modified/aeroinfo')
-        self.bladed_r  = dedup(br.find('axiala').x())
+        br = BladedRun(self.BLADED_RUN)
+        self.bladed_r = dedup(br.find('axiala').x())
         self.bladed = lambda chan: dedup(br.find(chan).get())
 
         # Load blade & aerofoil definitions
@@ -39,10 +41,9 @@ class BEMModel_Test_aeroinfo:
                               num_blades=3, aerofoil_database=db,
                               radii=self.bladed_r)
 
-
     def test_loading(self):
         # Expected values from Bladed
-        radii, chord, twist, thickness = bdata
+        radii, chord, twist, thickness = get_bdata()
         radii += self.model.root_length
 
         assert_array_almost_equal(radii, self.model.radii, decimal=3)
@@ -51,20 +52,20 @@ class BEMModel_Test_aeroinfo:
                                   decimal=2)
 
         def thick_from_name(name):
-            if name[3] == '%': return float(name[:3])
-            elif name[2] == '%': return float(name[:2])
-            else: raise ValueError('no thickness in name')
+            if name[3] == '%':
+                return float(name[:3])
+            elif name[2] == '%':
+                return float(name[:2])
+            else:
+                raise ValueError('no thickness in name')
         assert_array_almost_equal(thickness, self.model.thick, decimal=3)
 
     def test_solution_against_Bladed(self):
-        # Same windspeed and rotor speed as the Bladed run
-        windspeed  = 12            # m/s
-        rotorspeed = 22 * (pi/30)  # rad/s
-        factors = self.model.solve(windspeed, rotorspeed, pitch=0)
+        factors = self.model.solve(*self.ARGS)
         a, at = zip(*factors)
 
         # Bladed results
-        ba  = self.bladed('axiala')
+        ba = self.bladed('axiala')
         bat = self.bladed('tanga')
 
         assert_array_almost_equal(a, ba, decimal=2)
@@ -72,48 +73,57 @@ class BEMModel_Test_aeroinfo:
 
     def test_forces_against_Bladed(self):
         # Same windspeed and rotor speed as the Bladed run
-        windspeed  = 12            # m/s
-        rotorspeed = 22 * (pi/30)  # rad/s
-        factors = self.model.solve(windspeed, rotorspeed, 0)
-        forces = self.model.forces(windspeed, rotorspeed, 0, 1.225, factors)
-        fx, fy = map(array, zip(*forces))
+        factors = self.model.solve(*self.ARGS)
+        forces = self.model.forces(*self.ARGS, rho=1.225, factors=factors)
+        mfx, mfy = map(array, zip(*forces))
 
         # Bladed results
         bfx = self.bladed('dfout')
         bfy = self.bladed('dfin')
 
-        assert_array_almost_equal(fx  / abs(fx).max(),
-                                  bfx / abs(fx).max(), decimal=3)
-        assert_array_almost_equal(fy  / abs(fy).max(),
-                                  bfy / abs(fy).max(), decimal=2)
+        assert_array_almost_equal(mfx / abs(mfx).max(),
+                                  bfx / abs(mfx).max(), decimal=3)
+        assert_array_almost_equal(mfy / abs(mfy).max(),
+                                  bfy / abs(mfy).max(), decimal=2)
 
     def test_solve_finds_equilibrium_solution(self):
-        windspeed  = 12             # m/s
-        rotorspeed = 22 * (pi/30)   # rad/s
-        pitch      = 2  * (pi/180)  # rad
-        factors = self.model.solve(windspeed, rotorspeed, pitch)
-        xdot = self.model.inflow_derivatives(windspeed, rotorspeed,
-                                             pitch, factors)
+        factors = self.model.solve(*self.ARGS)
+        xdot = self.model.inflow_derivatives(*self.ARGS, factors=factors)
         assert_allclose(xdot, 0, atol=1e-4)
 
     def test_inflow_derivatives_with_one_annulus(self):
-        args = (12.2, 12*pi/30, 0)
-        factors = self.model.solve(*args)
-
-        all_derivs = self.model.inflow_derivatives(*args, factors=factors*1.1)
-
+        factors = self.model.solve(*self.ARGS)
+        all_derivs = self.model.inflow_derivatives(
+            *self.ARGS, factors=factors*1.1)
         one_derivs = self.model.inflow_derivatives(
-            *args, factors=factors[7:8]*1.1, annuli=slice(7, 8))
-
+            *self.ARGS, factors=factors[7:8]*1.1, annuli=slice(7, 8))
         assert_array_almost_equal(one_derivs, all_derivs[7:8, :])
 
-class BEMModel_Test_pcoeffs:
-    def setup(self):
 
+class BEMModel_Test_aeroinfo_12ms(BEMModel_aeroinfo_base, unittest.TestCase):
+    BLADED_RUN = 'tests/data/Bladed_demo_a_modified/aeroinfo'
+    ARGS = (
+        12.0,           # windspeed [m/s]
+        22 * (pi/30),   # rotor speed [rad/s]
+        0 * (pi/180),  # pitch angle [rad]
+    )
+
+
+class BEMModel_Test_aeroinfo_14ms(BEMModel_aeroinfo_base, unittest.TestCase):
+    BLADED_RUN = 'tests/data/Bladed_demo_a_modified/aeroinfo_14ms_2deg'
+    ARGS = (
+        14.0,           # windspeed [m/s]
+        22 * (pi/30),   # rotor speed [rad/s]
+        2 * (pi/180),  # pitch angle [rad]
+    )
+
+
+class BEMModel_Test_pcoeffs(unittest.TestCase):
+    def setUp(self):
         # Load reference results from Bladed
         from pybladed.data import BladedRun
         br = BladedRun('tests/data/Bladed_demo_a_modified/pcoeffs')
-        self.bladed_TSR  = br.find('pocoef').x()
+        self.bladed_TSR = br.find('pocoef').x()
         self.bladed = lambda chan: br.find(chan).get()
 
         # Load blade & aerofoil definitions

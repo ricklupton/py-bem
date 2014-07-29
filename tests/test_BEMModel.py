@@ -1,9 +1,8 @@
-from nose.tools import *
 import unittest
 from numpy import pi, array
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem.bem import BEMModel
+from bem import BEMModel
 
 
 class BEMModelTestCase(unittest.TestCase):
@@ -26,12 +25,26 @@ class BEMModelTestCase(unittest.TestCase):
                               3, MockDatabase())
 
     def test_annuli_edges_are_correct(self):
-        eq_(list(self.model.boundaries), [10, 11, 13, 15, 16])
+        self.assertEqual(list(self.model.boundaries),
+                         [10, 11, 13, 15, 16])
 
     def test_solve_wake_is_same_as_solve(self):
         args = (12.2, 12*pi/30, 0)
         factors = self.model.solve(*args)
         wake = self.model.solve_wake(*args)
+        assert_aae(factors[:, 0], wake[:, 0] / args[0])
+        assert_aae(factors[:, 1], wake[:, 1] / args[1] / self.model.radii)
+
+    def test_solve_wake_is_same_as_solve_with_extra_factors(self):
+        args = (12.2, 12*pi/30, 0)
+        wake = self.model.solve_wake(*args)
+        extra_velocities = wake * 0.43
+        extra_velocity_factors = extra_velocities / args[0]
+
+        factors = self.model.solve(
+            *args, extra_velocity_factors=extra_velocity_factors)
+        wake = self.model.solve_wake(*args, extra_velocities=extra_velocities)
+
         assert_aae(factors[:, 0], wake[:, 0] / args[0])
         assert_aae(factors[:, 1], wake[:, 1] / args[1] / self.model.radii)
 
@@ -55,7 +68,7 @@ class BEMModelTestCase(unittest.TestCase):
 
         one_derivs = self.model.inflow_derivatives(*args,
                                                    factors=factors[2:3]*1.1,
-                                                   annuli=slice(2,3))
+                                                   annuli=slice(2, 3))
 
         assert_aae(one_derivs, all_derivs[2:3, :])
 
@@ -66,7 +79,7 @@ class BEMModelTestCase(unittest.TestCase):
         with self.assertRaises(Exception):
             self.model.inflow_derivatives(*args,
                                           factors=factors[2:4],
-                                          annuli=slice(2,3))
+                                          annuli=slice(2, 3))
 
         with self.assertRaises(Exception):
             phi = array([5, 4, 3, 2]) * pi / 180
