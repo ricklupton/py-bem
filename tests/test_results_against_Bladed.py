@@ -3,20 +3,8 @@ from numpy import pi, array, r_
 from numpy.testing import (assert_array_almost_equal,
                            assert_allclose)
 
-from bem import (BEMModel, AerofoilDatabase)
-from mbwind.blade import Blade
 from pybladed.data import BladedRun
-
-
-demo_a_blade = """0	1.14815	3.44444	5.74074	9.18519	16.0741	26.4074	35.5926	38.2333	38.75
-2.06667	2.06667	2.75556	3.44444	3.44444	2.75556	1.83704	1.14815	0.688889	0.028704
-0	0	9	13	11	7.800002	3.3	0.3	2.75	4
-21	21	21	21	21	21	15	13	13	13"""
-
-
-def get_bdata():
-    return [array([float(x) for x in row.split()])
-            for row in demo_a_blade.split('\n')]
+from . import utils
 
 
 # De-duplicate repeated stations in Bladed output
@@ -31,34 +19,8 @@ class BEMModel_aeroinfo_base:
         self.bladed_r = dedup(br.find('axiala').x())
         self.bladed = lambda chan: dedup(br.find(chan).get())
 
-        # Load blade & aerofoil definitions
-        blade = Blade('tests/data/Bladed_demo_a_modified/aeroinfo.$PJ')
-        db = AerofoilDatabase('tests/data/aerofoils.npz')
-        root_length = 1.25
-
         # Create BEM model, interpolating to same output radii as Bladed
-        self.model = BEMModel(blade, root_length=root_length,
-                              num_blades=3, aerofoil_database=db,
-                              radii=self.bladed_r)
-
-    def test_loading(self):
-        # Expected values from Bladed
-        radii, chord, twist, thickness = get_bdata()
-        radii += self.model.root_length
-
-        assert_array_almost_equal(radii, self.model.radii, decimal=3)
-        assert_array_almost_equal(chord, self.model.chord, decimal=4)
-        assert_array_almost_equal(twist, self.model.twist * 180/pi,
-                                  decimal=2)
-
-        def thick_from_name(name):
-            if name[3] == '%':
-                return float(name[:3])
-            elif name[2] == '%':
-                return float(name[:2])
-            else:
-                raise ValueError('no thickness in name')
-        assert_array_almost_equal(thickness, self.model.thick, decimal=3)
+        self.model = utils.get_test_model(self.bladed_r)
 
     def test_solution_against_Bladed(self):
         factors = self.model.solve(*self.ARGS)
@@ -126,14 +88,8 @@ class BEMModel_Test_pcoeffs(unittest.TestCase):
         self.bladed_TSR = br.find('pocoef').x()
         self.bladed = lambda chan: br.find(chan).get()
 
-        # Load blade & aerofoil definitions
-        blade = Blade('tests/data/Bladed_demo_a_modified/pcoeffs.$PJ')
-        db = AerofoilDatabase('tests/data/aerofoils.npz')
-        root_length = 1.25
-
         # Create BEM model, interpolating to same output radii as Bladed
-        self.model = BEMModel(blade, root_length=root_length,
-                              num_blades=3, aerofoil_database=db)
+        self.model = utils.get_test_model()
 
     def test_coefficients_against_Bladed(self):
         # Same rotor speed and TSRs as the Bladed run

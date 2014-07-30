@@ -64,7 +64,7 @@ class EquilibriumWakeAerodynamics:
             inputs[:, 0] = wind_speed
             inputs[:, 1] = rotor_speed
             inputs[:, 2] = pitch_angle
-            forces = np.zeros((inputs.shape[0], self.wake_state.shape[0], 2))
+            forces = np.zeros((inputs.shape[0], len(self.bem_model.radii), 2))
             for i in range(forces.shape[0]):
                 wake_state = self.bem_model.solve_wake(*inputs[i])
                 factors = wake_state / inputs[i, :2]

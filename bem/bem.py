@@ -2,6 +2,7 @@ import numpy as np
 from numpy import pi, sin, cos, arctan2, trapz, array, newaxis
 from scipy.interpolate import interp1d
 from .fast_interpolation import fast_interpolation
+import yaml
 
 
 def strip_boundaries(radii):
@@ -15,6 +16,29 @@ def strip_boundaries(radii):
 def wrap_angle(theta):
     """Wraps the angle to [-pi, pi]"""
     return (theta + pi) % (2 * pi) - pi
+
+
+class Blade:
+    def __init__(self, radii, chord, twist, thickness):
+        self.radii = radii
+        self.chord = chord
+        self.twist = twist
+        self.thickness = thickness
+        if not (len(radii) == len(chord) ==
+                len(twist) == len(thickness)):
+            raise ValueError("Shape mismatch")
+
+    @classmethod
+    def from_yaml(cls, filename_or_file):
+        if isinstance(filename_or_file, str):
+            with open(filename_or_file) as f:
+                data = yaml.safe_load(f)
+        else:
+            data = yaml.safe_load(filename_or_file)
+        return Blade(array(data['radii']),
+                     array(data['chord']),
+                     array(data['twist']) * pi / 180,
+                     array(data['thickness']))
 
 
 class AerofoilDatabase(object):
@@ -131,6 +155,10 @@ class BEMModel(object):
             alpha = np.vstack((alpha, alpha)).T
             return self._lift_drag_interp(alpha)
         else:
+            data = self.lift_drag_data[annuli]
+            if len(alpha) != data.shape[0]:
+                raise ValueError("Shape mismatch %s != %s" %
+                                 (len(self.alpha), data.shape))
             return [
                 interp1d(self.alpha, self.lift_drag_data[annuli][i],
                          axis=-2, copy=False)(alpha[i])
@@ -139,22 +167,25 @@ class BEMModel(object):
 
     def solve(self, windspeed, rotorspeed, pitch,
               extra_velocity_factors=None, tol=None,
-              max_iterations=500):
+              max_iterations=500, annuli=None):
 
         if tol is None:
             tol = 1e-6
+        if annuli is None:
+            annuli = slice(None)
 
-        factors = self._last_factors
+        r = self.radii[annuli]
+        factors = self._last_factors[annuli]
         for i in range(max_iterations):
-            lsr = LSR(windspeed, rotorspeed, self.radii)
+            lsr = LSR(windspeed, rotorspeed, r)
             W, phi = inflow(lsr, factors, extra_velocity_factors)
-            force_coeffs = self.force_coefficients(phi, pitch)
+            force_coeffs = self.force_coefficients(phi, pitch, annuli)
             new_factors = iterate_induction_factors(lsr, force_coeffs,
-                                                    self.solidity,
+                                                    self.solidity[annuli],
                                                     pitch, factors,
                                                     extra_velocity_factors)
             if np.max(abs(new_factors - factors)) < tol:
-                self._last_factors = new_factors
+                self._last_factors[annuli] = new_factors
                 return new_factors
             factors = new_factors
         raise RuntimeError("maximum iterations reached")
@@ -162,9 +193,12 @@ class BEMModel(object):
     def force_coefficients(self, inflow_angle, pitch, annuli=None):
         if annuli is None:
             annuli = slice(None)
+        twist = self.twist[annuli]
+        if len(twist) != len(inflow_angle):
+            raise ValueError("Shape mismatch")
 
         # lift & drag coefficients
-        alpha = wrap_angle(inflow_angle - self.twist[annuli] - pitch)
+        alpha = wrap_angle(inflow_angle - twist - pitch)
         cl_cd = self.lift_drag(alpha, annuli)
 
         # resolve in- and out-of-plane
@@ -204,7 +238,8 @@ class BEMModel(object):
         r = self.radii[annuli]
         u = factors[:, 0] * windspeed
         ut = factors[:, 1] * rotorspeed * r
-        assert r.shape == u.shape == ut.shape
+        if not (r.shape == u.shape == ut.shape):
+            raise ValueError("Shape mismatch")
 
         Wnorm, phi = inflow(LSR(windspeed, rotorspeed, r),
                             factors, extra_velocity_factors)
@@ -234,24 +269,32 @@ class BEMModel(object):
         return np.c_[udot, utdot]
 
     def forces(self, windspeed, rotorspeed, pitch, rho,
-               factors, extra_velocity_factors=None):
+               factors, extra_velocity_factors=None, annuli=None):
         """Calculate in- and out-of-plane forces per unit length"""
 
         if extra_velocity_factors is None:
             extra_velocity_factors = np.zeros_like(factors)
+        if annuli is None:
+            annuli = slice(None)
+
+        r = self.radii[annuli]
+        chord = self.chord[annuli]
+        if not len(r) == factors.shape[0]:
+            raise ValueError("Shape mismatch")
 
         # Calculate force coefficients
-        Wnorm, phi = inflow(LSR(windspeed, rotorspeed, self.radii),
+        Wnorm, phi = inflow(LSR(windspeed, rotorspeed, r),
                             factors, extra_velocity_factors)
         W = windspeed * Wnorm
-        force_coeffs = self.force_coefficients(phi, pitch)
+        force_coeffs = self.force_coefficients(phi, pitch, annuli)
         forces = (0.5 * rho * W[:, newaxis]**2 *
-                  self.chord[:, newaxis] * force_coeffs)
+                  chord[:, newaxis] * force_coeffs)
 
         # Force last station to have zero force for compatibility with Bladed
         # XXX this wouldn't work if the last station isn't guaranteed
         #     to be at the tip
-        forces[-1] = (0, 0)
+        if r[-1] == self.radii[-1]:
+            forces[-1] = (0, 0)
 
         return forces
 
