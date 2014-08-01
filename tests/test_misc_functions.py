@@ -3,8 +3,8 @@ from numpy import pi, sin, cos, array
 import numpy as np
 from numpy.testing import assert_array_almost_equal as assert_aae
 
-from bem import (thrust_correction_factor, iterate_induction_factors,
-                 inflow, strip_boundaries)
+from bem import iterate_induction_factors, inflow
+from bem.bem import _strip_boundaries, _thrust_correction_factor
 
 
 class strip_boundaries_TestCase(unittest.TestCase):
@@ -15,18 +15,18 @@ class strip_boundaries_TestCase(unittest.TestCase):
         radii = [0, 1, 3, 6, 7]
 
         expected = [0.0, 0.5, 2.0, 4.5, 6.5, 7.0]
-        result = strip_boundaries(radii)
+        result = _strip_boundaries(radii)
         self.assertEqual(list(result), expected)
 
 
 class thrust_correction_factor_TestCase(unittest.TestCase):
     def test_no_correction_for_small_a(self):
-        self.assertEqual(thrust_correction_factor(0), 1)
+        self.assertEqual(_thrust_correction_factor(0), 1)
 
     def test_smooth_transition(self):
         a_transition = 0.3539
-        H1 = thrust_correction_factor(a_transition)
-        H2 = thrust_correction_factor(a_transition + 1e-4)
+        H1 = _thrust_correction_factor(a_transition)
+        H2 = _thrust_correction_factor(a_transition + 1e-4)
         self.assertLess((H1 - H2), 1e-3)
 
 

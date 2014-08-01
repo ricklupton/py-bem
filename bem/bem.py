@@ -5,43 +5,70 @@ from .fast_interpolation import fast_interpolation
 import yaml
 
 
-def strip_boundaries(radii):
-    # Find two ends of strip -- halfway between this point and
-    # neighbours, apart from at ends when it's half as wide.
-    radii = 1.0 * np.asarray(radii)
-    midpoints = (radii[1:] + radii[:-1]) / 2
-    return np.r_[radii[0], midpoints, radii[-1]]
-
-
-def wrap_angle(theta):
-    """Wraps the angle to [-pi, pi]"""
-    return (theta + pi) % (2 * pi) - pi
-
-
 class Blade:
-    def __init__(self, radii, chord, twist, thickness):
-        self.radii = radii
+    """Holds a blade definition.
+
+    Attributes
+    ----------
+    x : ndarray
+        Position of blade stations (measured from blade root)
+    chord : ndarray
+        Chord length [m]
+    twist : ndarray
+        Twist, positive points leading edge upwind [rad]
+    thickness : ndarray
+        Percentage thickness of aerofoil [%]
+
+    """
+    def __init__(self, x, chord, twist, thickness):
+        self.x = x
         self.chord = chord
         self.twist = twist
         self.thickness = thickness
-        if not (len(radii) == len(chord) ==
+        if not (len(x) == len(chord) ==
                 len(twist) == len(thickness)):
             raise ValueError("Shape mismatch")
 
     @classmethod
     def from_yaml(cls, filename_or_file):
+        """Load blade definition from YAML file.
+
+        The file should have `x`, `chord`, `twist` and `thickness` keys.
+
+        Note
+        ----
+        NB: In the definition file, the twist is measured in degrees!
+
+        """
         if isinstance(filename_or_file, str):
             with open(filename_or_file) as f:
                 data = yaml.safe_load(f)
         else:
             data = yaml.safe_load(filename_or_file)
-        return Blade(array(data['radii']),
+        return Blade(array(data['x']),
                      array(data['chord']),
                      array(data['twist']) * pi / 180,
                      array(data['thickness']))
 
+    def resample(self, new_x):
+        return Blade(new_x,
+                     np.interp(new_x, self.x, self.chord),
+                     np.interp(new_x, self.x, self.twist),
+                     np.interp(new_x, self.x, self.thickness))
+
 
 class AerofoilDatabase(object):
+    """Store aerofoil list and drag data.
+
+    Loads data in `.npz` format. The data file should have two variables:
+
+    datasets : list of aerofoils
+    thicknesses : fractional thicknesses of the aerofoils in `datasets`
+
+    Each aerofoil is an array with `alpha`, `CL`, `CD` and `CM`
+    columns, where the angles are in radians.
+
+    """
     def __init__(self, filename):
         self.filename = filename
         self.aerofoils = np.load(filename)
@@ -62,11 +89,32 @@ class AerofoilDatabase(object):
             self.aerofoils['thicknesses'], lift_drag, axis=0, copy=False)
 
     def for_thickness(self, thickness):
+        """Return interpolated lift & drag data for the given thickness.
+
+        Parameters
+        ----------
+        thickness : float
+            Fractional thickness
+
+        """
         lift_drag = self.lift_drag_by_thickness(thickness)
         return lift_drag
 
 
-def thrust_correction_factor(a):
+def _strip_boundaries(radii):
+    # Find two ends of strip -- halfway between this point and
+    # neighbours, apart from at ends when it's half as wide.
+    radii = 1.0 * np.asarray(radii)
+    midpoints = (radii[1:] + radii[:-1]) / 2
+    return np.r_[radii[0], midpoints, radii[-1]]
+
+
+def _wrap_angle(theta):
+    """Wraps the angle to [-pi, pi]"""
+    return (theta + pi) % (2 * pi) - pi
+
+
+def _thrust_correction_factor(a):
     """Correction to the thrust for high induction factors"""
     a = np.atleast_1d(a)
     H = np.ones_like(a)
@@ -110,7 +158,7 @@ def iterate_induction_factors(LSR, force_coeffs, solidity, pitch,
 
     Kx[ix] = 4*sin(phi[ix])**2 / (solidity*cx)[ix]
     Ky[iy] = 4*sin(phi[iy])*cos(phi[iy]) / (solidity*cy)[iy]
-    H = thrust_correction_factor(a)
+    H = _thrust_correction_factor(a)
 
     new = np.empty_like(factors)
     new[:, 0] = 1. / (Kx/H + 1)
@@ -123,32 +171,24 @@ def iterate_induction_factors(LSR, force_coeffs, solidity, pitch,
 
 
 class BEMModel(object):
-    def __init__(self, blade, root_length, num_blades,
-                 aerofoil_database, radii=None):
-
-        if radii is None:
-            radii = root_length + blade.radii
-
+    def __init__(self, blade, root_length, num_blades, aerofoil_database):
         self.blade = blade
         self.root_length = root_length
         self.num_blades = num_blades
 
-        self.radii = radii
-        self.boundaries = strip_boundaries(radii)
-        self.chord = np.interp(radii, root_length + blade.radii, blade.chord)
-        self.twist = np.interp(radii, root_length + blade.radii, blade.twist)
-        self.thick = np.interp(radii, root_length + blade.radii,
-                               blade.thickness)
-        self.solidity = self.num_blades * self.chord / (2 * pi * radii)
+        self.radii = root_length + self.blade.x
+        self.boundaries = _strip_boundaries(self.radii)
+        self.solidity = (self.num_blades * self.blade.chord /
+                         (2 * pi * self.radii))
 
         # Aerofoil data
         self.alpha = aerofoil_database.alpha
         self.lift_drag_data = np.array([
             aerofoil_database.for_thickness(th / 100)
-            for th in self.thick])
+            for th in self.blade.thickness])
         self._lift_drag_interp = fast_interpolation(
             aerofoil_database.alpha, self.lift_drag_data, axis=1)
-        self._last_factors = np.zeros((len(radii), 2))
+        self._last_factors = np.zeros((len(self.radii), 2))
 
     def lift_drag(self, alpha, annuli=None):
         if annuli is None or annuli == slice(None):
@@ -193,12 +233,12 @@ class BEMModel(object):
     def force_coefficients(self, inflow_angle, pitch, annuli=None):
         if annuli is None:
             annuli = slice(None)
-        twist = self.twist[annuli]
+        twist = self.blade.twist[annuli]
         if len(twist) != len(inflow_angle):
             raise ValueError("Shape mismatch")
 
         # lift & drag coefficients
-        alpha = wrap_angle(inflow_angle - twist - pitch)
+        alpha = _wrap_angle(inflow_angle - twist - pitch)
         cl_cd = self.lift_drag(alpha, annuli)
 
         # resolve in- and out-of-plane
@@ -251,7 +291,7 @@ class BEMModel(object):
         R1, R2 = self.boundaries[:-1][annuli], self.boundaries[1:][annuli]
         mu = (16.0 / (3*pi)) * (R2**3 - R1**3) / (R2**2 - R1**2)
 
-        H = thrust_correction_factor(factors[:, 0])
+        H = _thrust_correction_factor(factors[:, 0])
         ii = abs(factors[:, 0] - 1) < 1e-3
         udot, utdot = np.zeros_like(u), np.zeros_like(ut)
 
@@ -278,7 +318,7 @@ class BEMModel(object):
             annuli = slice(None)
 
         r = self.radii[annuli]
-        chord = self.chord[annuli]
+        chord = self.blade.chord[annuli]
         if not len(r) == factors.shape[0]:
             raise ValueError("Shape mismatch")
 

@@ -95,7 +95,7 @@ class TestBEMModelSimple(unittest.TestCase):
 
     def setUp(self):
         class MockBlade:
-            radii = array([0, 2, 4, 6])
+            x = array([0, 2, 4, 6])
             chord = array([1, 1, 1, 1])
             twist = array([1, 1, 1, 1]) * pi / 180
             thickness = array([1, 1, 1, 1])
