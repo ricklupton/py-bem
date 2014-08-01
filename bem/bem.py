@@ -1,5 +1,5 @@
 import numpy as np
-from numpy import pi, sin, cos, arctan2, trapz, array, newaxis
+from numpy import pi, sin, cos, arctan2, trapz, array, newaxis, nan
 from scipy.interpolate import interp1d
 from .fast_interpolation import fast_interpolation
 import yaml
@@ -18,15 +18,39 @@ class Blade:
         Twist, positive points leading edge upwind [rad]
     thickness : ndarray
         Percentage thickness of aerofoil [%]
+    density : ndarray, optional
+        Mass per unit length of blade [kg/m]
+    EA : ndarray, optional
+        Axial stiffness
+    EI_flap, EI_edge : ndarray, optional
+        Bending stiffness in flapwise and edgewise directions
 
     """
-    def __init__(self, x, chord, twist, thickness):
-        self.x = x
-        self.chord = chord
-        self.twist = twist
-        self.thickness = thickness
-        if not (len(x) == len(chord) ==
-                len(twist) == len(thickness)):
+    def __init__(self, x, chord, twist, thickness,
+                 density=None, EA=None, EI_flap=None, EI_edge=None):
+
+        self.x = array(x)
+
+        # Optional mass properties
+        if density is None:
+            density = nan * self.x
+        if EA is None:
+            EA = nan * self.x
+        if EI_flap is None:
+            EI_flap = nan * self.x
+        if EI_edge is None:
+            EI_edge = nan * self.x
+
+        self.chord = array(chord)
+        self.twist = array(twist)
+        self.thickness = array(thickness)
+        self.density = array(density)
+        self.EA = array(EA)
+        self.EI_flap = array(EI_flap)
+        self.EI_edge = array(EI_edge)
+
+        if not (len(x) == len(chord) == len(twist) == len(thickness) ==
+                len(density) == len(EA) == len(EI_flap) == len(EI_edge)):
             raise ValueError("Shape mismatch")
 
     @classmethod
@@ -45,16 +69,24 @@ class Blade:
                 data = yaml.safe_load(f)
         else:
             data = yaml.safe_load(filename_or_file)
-        return Blade(array(data['x']),
-                     array(data['chord']),
+        return Blade(data['x'],
+                     data['chord'],
                      array(data['twist']) * pi / 180,
-                     array(data['thickness']))
+                     data['thickness'],
+                     data.get('density'),
+                     data.get('EA'),
+                     data.get('EI_flap'),
+                     data.get('EI_edge'))
 
     def resample(self, new_x):
         return Blade(new_x,
                      np.interp(new_x, self.x, self.chord),
                      np.interp(new_x, self.x, self.twist),
-                     np.interp(new_x, self.x, self.thickness))
+                     np.interp(new_x, self.x, self.thickness),
+                     np.interp(new_x, self.x, self.density),
+                     np.interp(new_x, self.x, self.EA),
+                     np.interp(new_x, self.x, self.EI_flap),
+                     np.interp(new_x, self.x, self.EI_edge))
 
 
 class AerofoilDatabase(object):
