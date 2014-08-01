@@ -203,6 +203,20 @@ def iterate_induction_factors(LSR, force_coeffs, solidity, pitch,
 
 
 class BEMModel(object):
+    """A Blade Element - Momentum model.
+
+    Parameters
+    ----------
+    blade : Blade object
+        Blade parameter definition
+    root_length : float
+        Distance from centre of rotor to start of blade
+    num_blades : int
+        Number of blades in the rotor
+    aerofoil_database : AerofoilDatabase object
+        Definitions of aerofoil coefficients
+
+    """
     def __init__(self, blade, root_length, num_blades, aerofoil_database):
         self.blade = blade
         self.root_length = root_length
@@ -223,6 +237,21 @@ class BEMModel(object):
         self._last_factors = np.zeros((len(self.radii), 2))
 
     def lift_drag(self, alpha, annuli=None):
+        """Interpolate lift & drag coefficients for given angle of attack.
+
+        Parameters
+        ----------
+        alpha : array_like
+            Angle of attach at each annulus [radians]
+        annuli : slice or indices, optional
+            Subset of annuli to return data for. If given, `alpha`
+            should refer only to the annuli of interest.
+
+        Returns
+        -------
+        Array of shape (number of annuli, 2) containing CL and CD.
+
+        """
         if annuli is None or annuli == slice(None):
             alpha = np.vstack((alpha, alpha)).T
             return self._lift_drag_interp(alpha)
@@ -237,32 +266,26 @@ class BEMModel(object):
                 for i in range(len(alpha))
             ]
 
-    def solve(self, windspeed, rotorspeed, pitch,
-              extra_velocity_factors=None, tol=None,
-              max_iterations=500, annuli=None):
-
-        if tol is None:
-            tol = 1e-6
-        if annuli is None:
-            annuli = slice(None)
-
-        r = self.radii[annuli]
-        factors = self._last_factors[annuli]
-        for i in range(max_iterations):
-            lsr = LSR(windspeed, rotorspeed, r)
-            W, phi = inflow(lsr, factors, extra_velocity_factors)
-            force_coeffs = self.force_coefficients(phi, pitch, annuli)
-            new_factors = iterate_induction_factors(lsr, force_coeffs,
-                                                    self.solidity[annuli],
-                                                    pitch, factors,
-                                                    extra_velocity_factors)
-            if np.max(abs(new_factors - factors)) < tol:
-                self._last_factors[annuli] = new_factors
-                return new_factors
-            factors = new_factors
-        raise RuntimeError("maximum iterations reached")
-
     def force_coefficients(self, inflow_angle, pitch, annuli=None):
+        """Calculate force coefficients for given inflow.
+
+        The force coefficients Cx and Cy are the out-of-plane and
+        in-plane non-dimensional force per unit length, respectively.
+
+        Parameters
+        ----------
+        inflow_angle : array_like
+            Inflow angle at each annulus [radians]. Zero is in-plane, positive
+            is towards upwind.
+        annuli : slice or indices, optional
+            Subset of annuli to return data for. If given, `alpha`
+            should refer only to the annuli of interest.
+
+        Returns
+        -------
+        Array of shape (number of annuli, 2) containing CL and CD.
+
+        """
         if annuli is None:
             annuli = slice(None)
         twist = self.blade.twist[annuli]
@@ -283,6 +306,59 @@ class BEMModel(object):
         # ]
         cx_cy = np.einsum('ijh, hj -> hi', A, cl_cd)
         return cx_cy
+
+    def solve(self, windspeed, rotorspeed, pitch,
+              extra_velocity_factors=None, tol=None,
+              max_iterations=500, annuli=None):
+        """Calculate the BEM solution for the given conditions.
+
+        Parameters
+        ----------
+        windspeed : float
+            Free-stream wind speed
+        rotorspeed : float
+            Rotor speed [rad/s]
+        pitch : float
+            Pitch angle [rad]
+        extra_velocity_factors : ndarray, optional
+            Blade velocity normalised by windspeed
+        tol : float, optional
+            Absolute tolerance for solution
+        max_iterations : int, optional
+            Maximum number of iterations
+        annuli : slice or indices, optional
+            Subset of annuli to return data for.
+
+        Returns
+        -------
+        Array of axial and tangential induction factors at each annulus,
+        shape (number of annuli, 2).
+
+        Raises
+        ------
+        RuntimeError if maximum number of iterations reached.
+
+        """
+        if tol is None:
+            tol = 1e-6
+        if annuli is None:
+            annuli = slice(None)
+
+        r = self.radii[annuli]
+        factors = self._last_factors[annuli]
+        for i in range(max_iterations):
+            lsr = LSR(windspeed, rotorspeed, r)
+            W, phi = inflow(lsr, factors, extra_velocity_factors)
+            force_coeffs = self.force_coefficients(phi, pitch, annuli)
+            new_factors = iterate_induction_factors(lsr, force_coeffs,
+                                                    self.solidity[annuli],
+                                                    pitch, factors,
+                                                    extra_velocity_factors)
+            if np.max(abs(new_factors - factors)) < tol:
+                self._last_factors[annuli] = new_factors
+                return new_factors
+            factors = new_factors
+        raise RuntimeError("maximum iterations reached")
 
     def solve_wake(self, windspeed, rotorspeed, pitch, extra_velocities=None,
                    tol=None):
