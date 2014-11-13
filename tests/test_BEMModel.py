@@ -35,7 +35,10 @@ class TestBEMModelRealistic(unittest.TestCase):
         alpha = np.random.rand(len(self.model.radii)) * pi
         all_lift_drag = self.model.lift_drag(alpha)
         one_lift_drag = self.model.lift_drag(alpha[2:3], annuli=slice(2, 3))
+        another_lift_drag = self.model.lift_drag(alpha[2:3], annuli=[2])
+        self.assertIsInstance(one_lift_drag, np.ndarray)
         assert_aae(one_lift_drag, all_lift_drag[2:3, :])
+        assert_aae(another_lift_drag, all_lift_drag[2:3, :])
 
     def test_force_coefficients_one_annulus(self):
         phi = np.random.rand(len(self.model.radii)) * pi

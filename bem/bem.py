@@ -163,6 +163,7 @@ def LSR(windspeed, rotorspeed, radius):
 def inflow(LSR, factors, extra_velocity_factors=None):
     """Calculate inflow angle from LSR, induction factors and normalised
     extra blade velocities"""
+    factors = np.asarray(factors)
     Ux = (1.0 - factors[:, 0])
     Uy = LSR * (1.0 + factors[:, 1])
     if extra_velocity_factors is not None:
@@ -222,7 +223,7 @@ class BEMModel(object):
         self.root_length = root_length
         self.num_blades = num_blades
 
-        self.radii = root_length + self.blade.x
+        self.radii = root_length + np.asarray(self.blade.x)
         self.boundaries = _strip_boundaries(self.radii)
         self.solidity = (self.num_blades * self.blade.chord /
                          (2 * pi * self.radii))
@@ -260,11 +261,11 @@ class BEMModel(object):
             if len(alpha) != data.shape[0]:
                 raise ValueError("Shape mismatch %s != %s" %
                                  (len(self.alpha), data.shape))
-            return [
+            return np.array([
                 interp1d(self.alpha, self.lift_drag_data[annuli][i],
                          axis=-2, copy=False)(alpha[i])
                 for i in range(len(alpha))
-            ]
+            ])
 
     def force_coefficients(self, inflow_angle, pitch, annuli=None):
         """Calculate force coefficients for given inflow.
@@ -425,6 +426,7 @@ class BEMModel(object):
         if annuli is None:
             annuli = slice(None)
 
+        factors = np.asarray(factors)
         r = self.radii[annuli]
         chord = self.blade.chord[annuli]
         if not len(r) == factors.shape[0]:
